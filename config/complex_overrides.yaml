@@ -1,0 +1,9 @@
+# 단지 매칭 수동 보정. 자동 매칭이 틀리거나 애매할 때만 적는다.
+#
+# rent_to_complex: 전월세 행을 특정 단지 ID에 붙인다.
+#   키 형식 = "시군구코드|법정동|지번|단지명"  (python -m pipeline build 가 못 붙인 목록을 data/state/unmatched_rent.csv 에 남긴다)
+# kapt: 단지 ID → K-apt 단지코드(kaptCode)
+# rename: 단지 ID → 사이트에 보일 이름
+rent_to_complex: {}
+kapt: {}
+rename: {}

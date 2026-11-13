@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<response>
+  <header><resultCode>000</resultCode><resultMsg>OK</resultMsg></header>
+  <body>
+    <items>
+      <item>
+        <aptNm>테스트마을1단지</aptNm><buildYear>2008</buildYear><contractTerm>24.01~26.01</contractTerm>
+        <contractType>갱신</contractType><dealDay>9</dealDay><dealMonth>1</dealMonth><dealYear>2024</dealYear>
+        <deposit>120,000</deposit><excluUseAr>84.97</excluUseAr><floor>7</floor><jibun>100</jibun>
+        <monthlyRent>0</monthlyRent><preDeposit>110,000</preDeposit><preMonthlyRent>0</preMonthlyRent>
+        <sggCd>11680</sggCd><umdNm>테스트동</umdNm><useRRRight>사용</useRRRight>
+      </item>
+      <item>
+        <aptNm>테스트마을1단지</aptNm><buildYear>2008</buildYear><contractTerm> </contractTerm>
+        <contractType>신규</contractType><dealDay>21</dealDay><dealMonth>1</dealMonth><dealYear>2024</dealYear>
+        <deposit>30,000</deposit><excluUseAr>84.97</excluUseAr><floor>3</floor><jibun>100</jibun>
+        <monthlyRent>280</monthlyRent><preDeposit> </preDeposit><preMonthlyRent> </preMonthlyRent>
+        <sggCd>11680</sggCd><umdNm>테스트동</umdNm><useRRRight> </useRRRight>
+      </item>
+    </items>
+    <numOfRows>1000</numOfRows><pageNo>1</pageNo><totalCount>2</totalCount>
+  </body>
+</response>

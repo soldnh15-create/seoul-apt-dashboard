@@ -1,0 +1,108 @@
+"""주간 시장 요약. 기본은 규칙 기반(계산된 숫자를 문장 틀에 끼워 넣기)이고,
+AI 글(선택)은 숫자 검증을 통과했을 때만 함께 싣는다."""
+from __future__ import annotations
+
+import re
+
+
+def _sign(v) -> str:
+    return "변동 없음" if not v else (f"{abs(v)}% 상승" if v > 0 else f"{abs(v)}% 하락")
+
+
+def _eok(manwon) -> str:
+    if manwon is None:
+        return "-"
+    e, m = divmod(int(manwon), 10000)
+    return (f"{e}억" + (f" {m:,}만" if m else "")) if e else f"{m:,}만"
+
+
+def facts(doc: dict) -> dict:
+    k = doc["kpi"]
+    gus = [g for g in doc["gus"] if g.get("chg3m") is not None]
+    up = sorted(gus, key=lambda g: g["chg3m"], reverse=True)[:3]
+    down = sorted(gus, key=lambda g: g["chg3m"])[:3]
+    busy = sorted([g for g in doc["gus"] if g.get("volchg") is not None],
+                  key=lambda g: g["volchg"], reverse=True)[:3]
+    nh = sorted(doc["newhighs"], key=lambda x: x.get("rise") or 0, reverse=True)[:5]
+    return {
+        "region": doc["short"], "asof": doc["asof"], "ppy": k["ppy"], "chg3m": k["chg3m"], "yoy": k["yoy"],
+        "vol_last": k["vol_last"], "vol_prev": k["vol_prev"],
+        "vol_diff": abs((k["vol_last"] or 0) - (k["vol_prev"] or 0)), "jr": k["jr"], "cancel": k["cancel"],
+        "direct": k["direct"], "nh30": k["nh30"], "nh7": k["nh7"],
+        "up": [{"name": g["name"], "chg3m": g["chg3m"]} for g in up],
+        "down": [{"name": g["name"], "chg3m": g["chg3m"]} for g in down],
+        "busy": [{"name": g["name"], "volchg": g["volchg"]} for g in busy],
+        "newhighs": [{"name": x["name"], "gu": x["gu"], "a": x["a"], "price": x["price"], "rise": x["rise"]}
+                     for x in nh],
+    }
+
+
+def render(f: dict) -> list[str]:
+    lines = [
+        f"{f['region']} 아파트 중위 평단가는 최근 3개월 기준 3.3㎡당 {f['ppy']:,}만원으로, 직전 3개월보다 {_sign(f['chg3m'])}했습니다."
+        if f["ppy"] else f"{f['region']} 평단가를 계산할 거래가 부족합니다.",
+    ]
+    if f["yoy"] is not None:
+        lines.append(f"1년 전 같은 기간과 비교하면 {_sign(f['yoy'])}입니다.")
+    if f["vol_last"] is not None:
+        d = f["vol_last"] - (f["vol_prev"] or 0)
+        lines.append(f"지난달 신고된 매매는 {f['vol_last']:,}건으로 그 전달({f['vol_prev']:,}건)보다 "
+                     f"{abs(d):,}건 {'늘었습니다' if d >= 0 else '줄었습니다'}. 신고 기한(계약 후 30일)이 남아 더 늘 수 있습니다.")
+    if f["up"]:
+        lines.append("평단가가 많이 오른 구: " + ", ".join(f"{g['name']}({g['chg3m']:+}%)" for g in f["up"]) + ".")
+    if f["down"]:
+        lines.append("평단가가 덜 오르거나 내린 구: " + ", ".join(f"{g['name']}({g['chg3m']:+}%)" for g in f["down"]) + ".")
+    if f["jr"] is not None:
+        lines.append(f"전세가율(전세 평단가 ÷ 매매 평단가)은 {f['jr']}%입니다.")
+    lines.append(f"최근 30일 신고가 거래는 {f['nh30']:,}건(최근 7일 {f['nh7']:,}건)입니다.")
+    for x in f["newhighs"][:3]:
+        lines.append(f"· {x['gu']} {x['name']} {x['a']}㎡ {_eok(x['price'])}원 (직전 최고가 대비 {x['rise']:+}%)")
+    if f["cancel"] is not None:
+        lines.append(f"최근 3개월 해제 거래 비율 {f['cancel']}%, 직거래 비율 {f['direct']}%.")
+    return lines
+
+
+_NUMS = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def allowed_numbers(obj, acc: set | None = None) -> set:
+    """facts 안의 모든 숫자(절댓값, 쉼표 없는 문자열)."""
+    acc = set() if acc is None else acc
+    if isinstance(obj, dict):
+        for v in obj.values():
+            allowed_numbers(v, acc)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            allowed_numbers(v, acc)
+    elif isinstance(obj, (int, float)) and not isinstance(obj, bool):
+        acc.add(f"{abs(obj):g}")
+        if isinstance(obj, int) and abs(obj) >= 10000:   # 만원 → 억 표기 허용
+            e, m = divmod(abs(obj), 10000)
+            acc.update({str(e), str(m)})
+            acc.add(f"{abs(obj) / 10000:g}")
+    elif isinstance(obj, str):
+        acc.update(n.replace(",", "") for n in _NUMS.findall(obj))
+    return acc
+
+
+def verify_numbers(text: str, f: dict) -> list[str]:
+    """글 속 숫자 중 facts 에 없는 것(= 지어낸 숫자) 목록. 비어 있으면 통과."""
+    ok = allowed_numbers(f) | {"3", "30", "7", "1", "3.3", "12"}   # 기간 표현(3개월·30일·7일·1년·3.3㎡)
+    bad = []
+    for n in _NUMS.findall(text):
+        v = n.replace(",", "")
+        try:
+            v = f"{float(v):g}"
+        except ValueError:
+            pass
+        if v not in ok:
+            bad.append(n)
+    return bad
+
+
+def build(doc: dict, ai: dict | None = None) -> dict:
+    f = facts(doc)
+    out = {"asof": doc["asof"], "region": doc["short"], "facts": f, "lines": render(f), "ai": None}
+    if ai and ai.get("text") and ai.get("asof") == doc["asof"] and not verify_numbers(ai["text"], f):
+        out["ai"] = {"text": ai["text"], "model": ai.get("model", ""), "generated": ai.get("generated", "")}
+    return out

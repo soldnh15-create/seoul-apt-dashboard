@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>강남박공 서울 아파트 실거래 대시보드</title>
+<meta name="description" content="매일 자동으로 갱신되는 서울 아파트 실거래 분석. 신고가, 전고점 대비 낙폭, 전세가율, 단지 비교, 조건 검색까지 무료로.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="강남박공 서울 아파트 실거래 대시보드">
+<meta property="og:description" content="매일 자동 갱신 · 신고가 · 낙폭 · 전세가율 · 단지 비교 · 조건 검색 — 무료">
+<meta property="og:image" content="og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#14284b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/app.css">
+<script>
+  // 저장된 테마를 그리기 전에 적용(깜빡임 방지)
+  try { var t = JSON.parse(localStorage.getItem('gnbg-apt-v1') || '{}').theme; if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#/" aria-label="홈으로">
+      <span class="logo" id="brand">강남박공</span>
+      <span class="brand-sub">서울 아파트 실거래</span>
+    </a>
+    <div class="search" role="search">
+      <input id="q" type="search" placeholder="단지명 검색 · 초성도 돼요 (ㄹㅁㅇ)" autocomplete="off" aria-label="단지명 검색">
+      <div id="qres" class="qres" hidden></div>
+    </div>
+    <a id="cta" class="cta" href="#" target="_blank" rel="noopener">내집마련 사관학교 보러 가기</a>
+    <button id="theme" class="icon-btn" aria-label="밝게·어둡게 바꾸기" title="밝게·어둡게">◐</button>
+  </div>
+  <nav class="tabs" id="nav" aria-label="메뉴">
+    <a href="#/" data-r="home">홈</a>
+    <a href="#/gu" data-r="gu">구별</a>
+    <a href="#/map" data-r="map">지도</a>
+    <a href="#/screener" data-r="screener">조건 검색</a>
+    <a href="#/score" data-r="score">내 기준 점수</a>
+    <a href="#/compare" data-r="compare">단지 비교</a>
+    <a href="#/my" data-r="my">관심 단지</a>
+    <a href="#/report" data-r="report">주간 리포트</a>
+  </nav>
+</header>
+<div id="banner"></div>
+<main id="app" tabindex="-1"><p class="loading">불러오는 중…</p></main>
+<footer class="foot">
+  <p id="disclaimer">이 사이트는 투자 권유가 아니며, 데이터는 국토교통부 등 공공데이터를 가공한 것입니다.</p>
+  <p class="muted"><span id="source">자료: 국토교통부 실거래가 공개시스템(공공데이터포털)</span> · <span id="updated"></span></p>
+  <p><a id="cta2" href="#" target="_blank" rel="noopener">강남박공 · 내집마련 사관학교</a></p>
+</footer>
+<div id="toast" class="toast" hidden></div>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js" defer></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
