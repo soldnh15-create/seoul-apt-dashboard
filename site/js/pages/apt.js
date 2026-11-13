@@ -96,6 +96,19 @@ export async function render(el, r) {
         { k: 'monthly', label: '월세', num: 1, fmt: v => v ? F.man(v) : '전세' }, { k: 'renew', label: '구분' }],
     });
     history.replaceState(null, '', `#/apt/${sgg}/${id}${a === apt.main ? '' : `?a=${a}`}`);
+    drawCalc();
+  };
+  /** 필요 자금: 매매가 − 대출금, 월 상환액(원리금균등), 전세 끼고 살 때(갭) */
+  const drawCalc = () => {
+    const t = apt.types.find(x => x.a === a);
+    const c = S.calc || (S.calc = { loan: 0, rate: 4, years: 30 });
+    const loan = Math.max(0, c.loan || 0) * 10000, r = Math.max(0, c.rate || 0) / 1200, n = Math.max(1, c.years || 30) * 12;
+    const monthly = !loan ? 0 : r ? loan * r / (1 - Math.pow(1 + r, -n)) : loan / n;
+    $('#calc', el).innerHTML = `
+      ${kpiCard('최근 시세', F.eok(t.recent), `${a}㎡`)}
+      ${kpiCard('필요 현금 (매매)', F.eok(Math.max(0, t.recent - loan)), `시세 − 대출금 ${F.eok(loan)}`)}
+      ${kpiCard('월 상환액', loan ? `${F.n(Math.round(monthly))}만원` : '-', loan ? `원리금균등 · 연 ${c.rate}% · ${c.years}년` : '대출금을 넣어 보세요')}
+      ${kpiCard('전세 끼고 살 때 필요 현금', t.gap != null ? F.eok(t.gap) : '-', t.gap != null ? `시세 − 전세 ${F.eok(t.jeonse)}` : '최근 전세 거래 없음')}`;
   };
 
   const sp = apt.spec || {}, geo = apt.geo || {};
@@ -126,6 +139,12 @@ export async function render(el, r) {
           <input type="number" id="target" step="0.1" min="0" style="width:90px" placeholder="예: 12.5"><button class="btn sm" id="tsave">저장</button></div>
         <p class="note">목표가는 이 기기(브라우저)에만 저장돼요.</p></div>
     </div>
+    <div class="card"><h2>필요 자금 계산 <span class="muted small">(참고용 · 선택한 면적의 최근 시세 기준)</span></h2>
+      <div class="row"><label class="small">대출금(억) <input type="number" id="loan" step="0.1" min="0" style="width:84px" placeholder="예: 5"></label>
+        <label class="small">금리(연 %) <input type="number" id="rate" step="0.1" min="0" style="width:72px"></label>
+        <label class="small">기간(년) <input type="number" id="years" step="1" min="1" max="50" style="width:64px"></label></div>
+      <div class="kpis" id="calc" style="margin:10px 0 0"></div>
+      <p class="note">단순 계산이에요. 취득세·중개보수 같은 부대비용은 빠져 있고, 실제 대출 한도와 금리는 금융회사 심사에 따라 달라요.</p></div>
     <div class="grid two">
       <div class="card"><h2>매매 내역</h2><div id="t-trade"></div></div>
       <div class="card"><h2>전월세 내역</h2><div id="t-rent"></div></div>
@@ -148,6 +167,9 @@ export async function render(el, r) {
   $('#types', el).onclick = e => { const b = e.target.closest('.chip'); if (!b) return; a = +b.dataset.a; mark(); draw(); };
   $('#rent', el).onchange = e => { showRent = e.target.checked; draw(); };
   $('#range', el).onclick = e => { const b = e.target.closest('.chip'); if (!b) return; range = +b.dataset.v; $$('.chip', b.parentElement).forEach(x => x.classList.toggle('on', x === b)); draw(); };
+  const cv = S.calc || (S.calc = { loan: 0, rate: 4, years: 30 });
+  $('#loan', el).value = cv.loan || ''; $('#rate', el).value = cv.rate; $('#years', el).value = cv.years;
+  for (const k of ['loan', 'rate', 'years']) $(`#${k}`, el).oninput = e => { S.calc[k] = parseFloat(e.target.value) || 0; save(); drawCalc(); };
   mark(); drawStar(); draw();
   void bandLabel;
 }

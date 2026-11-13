@@ -1,5 +1,5 @@
 // 홈: 시도 요약 — 핵심 지표, 추이, 구별 순위, 신고가
-import { $, $$, D, S, F, cls, esc, get, table, chart, seriesChart, css, isDark, setQuery } from '../core.js';
+import { $, $$, D, S, F, cls, esc, get, table, chart, seriesChart, css, isDark, setQuery, loadIndex } from '../core.js';
 
 export const kpiCard = (lab, val, sub = '', c = '') => `<div class="kpi"><div class="lab">${lab}</div><div class="val ${c}">${val}</div><div class="sub muted">${sub}</div></div>`;
 
@@ -68,6 +68,11 @@ export async function render(el, r) {
       <div class="chart" id="c-main"></div>
     </div>
     <div class="card"><div class="head"><h2>구별 순위</h2><span class="muted small">제목을 누르면 정렬돼요</span></div><div id="t-gu"></div></div>
+    <div class="card"><div class="head"><h2>단지 순위</h2>
+      <div class="chips" id="rk-ctl"><button class="chip on" data-k="n12" data-d="-1">거래 많은 순</button><button class="chip" data-k="chg1y" data-d="-1">1년 많이 오른 순</button>
+        <button class="chip" data-k="dd" data-d="1">고점 대비 많이 내린 순</button><button class="chip" data-k="jr" data-d="-1">전세가율 높은 순</button></div></div>
+      <div id="t-rk"><p class="muted small">불러오는 중…</p></div>
+      <p class="note">각 단지의 대표 면적 기준. 1년 넘게 거래가 없는 단지는 빼요. 순위일 뿐 추천이 아니에요.</p></div>
     <div class="card">
       <div class="head"><h2>신고가 거래</h2>
         <div class="chips" id="nh-ctl"><button class="chip" data-v="7">최근 7일</button><button class="chip on" data-v="30">최근 30일</button></div></div>
@@ -123,4 +128,17 @@ export async function render(el, r) {
   });
   ageChart($('#c-age', el), d.age);
   setQuery('/', { sido: code === meta.sidos[0].code ? '' : code });
+
+  // 단지 순위는 색인을 받은 뒤에 채운다(첫 화면을 늦추지 않게)
+  Promise.all([loadIndex(), import('./gu.js')]).then(([index, gu]) => {
+    const sggs = new Set(d.gus.map(g => g.sgg));
+    const rows = index.filter(o => sggs.has(o.sgg) && !o.stale);
+    const cols = [{ k: 'gu', label: '구' }, ...gu.APT_COLS.filter(c => !['umd', 'by', 'hh'].includes(c.k)), { k: 'chg1y', label: '1년', num: 1, color: 1, fmt: v => F.pct(v) }];
+    const show = (k, dir) => table($('#t-rk', el), { cols, rows: rows.filter(o => o[k] != null), sort: k, dir, limit: 10, csv: `${d.short}_단지순위_${d.asof}.csv` });
+    show('n12', -1);
+    $('#rk-ctl', el).onclick = e => {
+      const b = e.target.closest('.chip'); if (!b) return;
+      $$('.chip', b.parentElement).forEach(x => x.classList.toggle('on', x === b)); show(b.dataset.k, +b.dataset.d);
+    };
+  }).catch(() => { const t = $('#t-rk', el); if (t) t.innerHTML = '<p class="muted small">단지 순위를 불러오지 못했어요.</p>'; });
 }

@@ -141,7 +141,7 @@ export function table(host, { cols, rows, sort = null, dir = -1, limit = 30, csv
   const draw = () => {
     const list = sorted();
     host.innerHTML = `<div class="tblwrap"><table class="tbl"><thead><tr>${cols.map(c =>
-      `<th scope="col" data-k="${c.k}" class="${c.num ? 'num' : ''}${c.k === key ? ' sorted' : ''}"${c.tip ? ` title="${esc(c.tip)}"` : ''}>${esc(c.label)}${c.k === key ? (d > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead><tbody>${
+      `<th scope="col" tabindex="0" data-k="${c.k}" class="${c.num ? 'num' : ''}${c.k === key ? ' sorted' : ''}"${c.k === key ? ` aria-sort="${d > 0 ? 'ascending' : 'descending'}"` : ''}${c.tip ? ` title="${esc(c.tip)}"` : ''}>${esc(c.label)}${c.k === key ? (d > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead><tbody>${
       list.slice(0, shown).map(r => `<tr${r.href ? ` class="click" data-href="${esc(r.href)}"` : ''}>${cols.map(c => {
         const v = r[c.k];
         return `<td class="${c.num ? 'num' : ''} ${c.color ? cls(v) : ''}">${c.fmt ? c.fmt(v, r) : esc(v ?? '-')}</td>`;
@@ -162,6 +162,7 @@ export function table(host, { cols, rows, sort = null, dir = -1, limit = 30, csv
     const tr = e.target.closest('tr[data-href]');
     if (tr) location.hash = tr.dataset.href;
   };
+  host.onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.tagName === 'TH') { e.preventDefault(); e.target.click(); } };
   draw();
   return { update(r) { rows = r; shown = limit; draw(); } };
 }
