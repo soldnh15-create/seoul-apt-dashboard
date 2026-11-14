@@ -137,6 +137,21 @@ def test_kapt_matching_needs_same_dong_and_similar_name():
     assert complexes.match_kapt(cxs, kapt, {"kapt": {"11680-2": "A9"}})["11680-2"] == "A9"
 
 
+def test_kapt_matching_skips_nameless_and_wrong_numbered_complexes():
+    """실제 자료에서 '구로동 (749-96)' 같은 이름 없는 단지 221곳이 '구로극동' 한 단지에 붙었던 문제."""
+    rows = [_t("2024-01-01", 1, apt="(749-96)", seq="11680-1"),          # 이름 없음 → '역삼동 (749-96)'
+            _t("2024-01-01", 1, apt="길음뉴타운", seq="11680-2"),          # 몇 단지인지 모름
+            _t("2024-01-01", 1, apt="길음뉴타운9단지", seq="11680-3"),
+            _t("2024-01-01", 1, apt="DMC파크뷰자이1단지", seq="11680-4"),   # K-apt 는 1~5단지를 한 단지로 올림
+            _t("2024-01-01", 1, apt="월드메르디앙", seq="11680-5"),
+            _t("2024-01-01", 1, apt="래미안", seq="11680-6")]
+    cxs, _ = complexes.assign(rows, [])
+    kapt = [{"kaptCode": c, "kaptName": n, "bjdCode": "1168010100", "as3": "역삼동"} for c, n in
+            [("A1", "역삼극동"), ("A8", "길음뉴타운8단지"), ("A9", "길음뉴타운9단지"), ("A5", "DMC파크뷰자이아파트"),
+             ("A6", "역삼동월드메르디앙아파트"), ("A7", "래미안퍼스티지")]]
+    assert complexes.match_kapt(cxs, kapt) == {"11680-3": "A9", "11680-4": "A5", "11680-5": "A6"}
+
+
 # ── 지표 ─────────────────────────────────────────────
 def test_area_bands():
     assert [metrics.band_of(a, BANDS) for a in (39.6, 59.96, 60.0, 60.01, 84.97, 85.0, 101.9)] == \
@@ -222,8 +237,44 @@ def test_kapt_update_fetches_list_and_specs_then_reuses_cache(tmp_path):
 
     def denied(url, timeout):
         return 403, "Forbidden"
-    (tmp_path / "kapt" / "list" / "11680.json").unlink()
+    lp = tmp_path / "kapt" / "list" / "11680.json"
+    saved_list = lp.read_text(encoding="utf-8")
+    lp.unlink()
     assert extras.kapt_update(transport=denied, log=quiet, base=tmp_path, regs=GU[:1]) == len(specs)   # 실패해도 멈추지 않음
+    lp.write_text(saved_list, encoding="utf-8")
+
+    # 정상 코드인데 내용이 빈 응답(실제로 자주 옴)은 '받았다'로 치지 않고 다음 실행에서 다시 받는다.
+    info_p = tmp_path / "kapt" / "info.json"
+    store.write_json(info_p, {code: {"basic": {}, "detail": {}} for code in store.read_json(info_p)})
+    blank_first = {"n": 0}
+
+    def flaky(url, timeout):
+        if "getAphusBassInfoV5" in url:
+            blank_first["n"] += 1
+            if blank_first["n"] == 1:
+                return ok({"item": {}})                           # 첫 번째만 빈 응답 → 바로 한 번 더 불러 채운다
+        if "getAphusDtlInfoV5" in url:
+            return ok({"item": {"kaptCode": "K0"}})              # 상세는 계속 빈 응답
+        return transport(url, timeout)
+
+    logs = []
+    extras.kapt_update(transport=flaky, log=logs.append, base=tmp_path, regs=GU[:1])
+    again = store.read_json(tmp_path / "kapt" / "specs.json")
+    assert next(iter(again.values()))["hh"] == 500 and "parking" not in next(iter(again.values()))
+    assert all(e["basic"] and not e["detail"] and e["tries"] == 1 for e in store.read_json(info_p).values())
+    assert any("빈 응답" in line and "resultCode=00" in line for line in logs)
+    extras.kapt_update(transport=transport, log=quiet, base=tmp_path, regs=GU[:1])                    # 다음 실행에서 마저 채움
+    assert next(iter(store.read_json(tmp_path / "kapt" / "specs.json").values()))["parking"] == 500
+
+    # 이름은 같아도 준공연도가 크게 다르면 다른 단지로 보고 붙이지 않는다.
+    store.write_json(info_p, {})
+
+    def other_year(url, timeout):
+        if "getAphusBassInfoV5" in url:
+            return ok({"item": {"kaptdaCnt": "500", "kaptUsedate": "19500101"}})
+        return transport(url, timeout)
+
+    assert extras.kapt_update(transport=other_year, log=quiet, base=tmp_path, regs=GU[:1]) == 0
 
 
 def test_region_change_compares_same_homes_not_mixed_medians():
@@ -358,6 +409,18 @@ def test_ai_text_with_invented_number_is_rejected():
            "kpi": {k: None for k in ("ppy", "chg3m", "yoy", "vol_last", "vol_prev", "jr", "cancel", "direct")}
            | {"nh30": 0, "nh7": 0}}
     assert report.build(doc, doc_ai)["ai"] is None
+
+
+def test_ai_text_without_units_is_rejected():
+    """2026-11-14 실제 응답: '변동률은 2.7이며 … 평당가는 4560이며' — 숫자는 맞아도 단위가 없으면 싣지 않는다."""
+    f = {"region": "서울", "asof": "2026-11-13", "ppy": 4560, "chg3m": 2.7, "yoy": 16.9, "nh30": 639,
+         "newhighs": [{"name": "광남캐스빌3", "gu": "강동구", "a": 83, "price": 93500, "rise": 56.6}]}
+    good = ("2026년 11월 13일 기준 서울 아파트 중위 평단가는 3.3㎡당 4,560만원입니다. 직전 3개월보다 2.7% 올랐고 "
+            "1년 전보다는 16.9% 올랐습니다. 최근 30일 신고가는 639건입니다. 강동구 광남캐스빌3 83㎡가 9억 3,500만원에 "
+            "거래돼 직전 최고가보다 56.6% 높았습니다.")
+    assert report.check_ai(good, f) == []
+    bad = "서울 아파트 시장의 3개월 변동률은 2.7이며 평당가는 4560이다. 광남캐스빌3 83제곱미터는 93500에 56.6 상승했다."
+    assert report.check_ai(bad, f) == ["2.7(단위 없음)", "4560(단위 없음)", "93500(단위 없음)", "56.6(단위 없음)"]
 
 
 def test_csv_export_for_other_teams(built, monkeypatch):

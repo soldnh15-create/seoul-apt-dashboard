@@ -59,13 +59,34 @@ def kapt_spec(basic: dict, detail: dict) -> dict:
     used = str(basic.get("kaptUsedate") or "")
     p = [num(detail.get("kaptdPcnt")), num(detail.get("kaptdPcntu"))]
     out = {
-        "hh": num(basic.get("kaptdaCnt")), "dongs": num(basic.get("kaptDongCnt")),
+        "hh": num(basic.get("kaptdaCnt")) or None, "dongs": num(basic.get("kaptDongCnt")) or None,
         "used": f"{used[:4]}-{used[4:6]}-{used[6:8]}" if len(used) >= 8 else None,
         "parking": sum(x for x in p if x) or None, "heat": basic.get("codeHeatNm") or None,
         "top": num(basic.get("kaptTopFloor")), "builder": basic.get("kaptBcompany") or None,
         "addr": basic.get("doroJuso") or basic.get("kaptAddr") or None,
     }
     return {k: v for k, v in out.items() if v is not None}
+
+
+KAPT_TRIES = 6        # 빈 응답만 오는 단지는 이 횟수(실행 단위)까지 다시 받아 보고 그만둔다
+KAPT_BLANK_STOP = 40  # 이만큼 연달아 빈 응답이면 그 실행에서는 더 부르지 않는다(서비스가 잠깐 이상한 때 호출만 쓰지 않게)
+
+
+def _kapt_shape(text: str) -> str:
+    """빈 응답이 어떤 모양이었는지(원인 추적용). 응답 속 값은 담지 않고 결과 코드와 칸 이름만 남긴다."""
+    try:
+        doc = json.loads(text or "")
+    except ValueError:
+        return f"JSON 아님({len(text or '')}자)"
+    resp = doc.get("response", doc) if isinstance(doc, dict) else {}
+    head = (resp.get("header") or {}) if isinstance(resp, dict) else {}
+    body = resp.get("body") if isinstance(resp, dict) else None
+    if isinstance(body, dict):
+        b = "{" + ",".join(f"{k}:{type(v).__name__}" + (f"[{len(v)}]" if isinstance(v, (dict, list, str)) else "")
+                           for k, v in sorted(body.items())) + "}"
+    else:
+        b = type(body).__name__
+    return f"resultCode={head.get('resultCode')} resultMsg={str(head.get('resultMsg'))[:40]} body={b}"
 
 
 def kapt_update(sample: bool = False, transport=None, log=print, base: Path | None = None,
@@ -77,17 +98,37 @@ def kapt_update(sample: bool = False, transport=None, log=print, base: Path | No
     cfg = config.settings()
     base = Path(base) if base else config.data_base(False)
     kw = {"transport": transport} if transport else {}
+    blanks: dict[str, int] = {}                # 빈 응답 모양 → 횟수
+
+    def parse_info(text: str):
+        """기본·상세 정보 응답. 정상 코드인데 내용이 빈 응답(실제로 자주 온다)은 '없음'으로 돌려주고 모양을 적어 둔다."""
+        items, n = api.parse_json_page(text)
+        if not items or not any(v not in (None, "") for k, v in items[0].items() if k != "kaptCode"):
+            shape = _kapt_shape(text)
+            blanks[shape] = blanks.get(shape, 0) + 1
+            return [], n
+        return items, n
+
     lst = api.Client(key or "TEST", cfg, parser=api.parse_json_page, **kw)
-    inf = api.Client(key or "TEST", cfg, parser=api.parse_json_page, key_name="ServiceKey", **kw)
+    inf = api.Client(key or "TEST", cfg, parser=parse_info, key_name="ServiceKey", **kw)
     budget = int(cfg.get("kapt_call_budget", 4500))
     deadline = _deadline(cfg) if transport is None else None
-    workers = max(1, int(cfg.get("extras_workers", 4))) if transport is None else 1
+    # 한 줄로만 받는다. 실측(2026-11-14): 4줄로 동시에 부르니 5곳 중 4곳이 빈 응답으로 왔다(한 줄일 때는 거의 다 채워짐).
+    workers = max(1, int(cfg.get("kapt_workers", 1))) if transport is None else 1
+    pause = 2.0 if transport is None else 0    # 빈 응답 뒤 한 번 더 부르기 전 쉬는 시간(초)
     kdir = Path(base) / "kapt"
     info = store.read_json(kdir / "info.json")
     specs = store.read_json(kdir / "specs.json")
     ov = config.overrides()
     pairs: list[tuple[str, str]] = []          # (단지 ID, K-apt 단지코드)
+    seen: set[str] = set()                     # 이번에 목록과 맞춰 본 우리 단지(예전에 잘못 붙은 것을 지우려고)
+    built: dict[str, object] = {}              # 우리 단지 ID → 준공연도(실거래 신고 기준)
+    names: dict[str, str] = {}                 # 우리 단지 ID → 다듬은 이름
+    knames: dict[str, str] = {}                # K-apt 단지코드 → 다듬은 이름
+    manual = (ov or {}).get("kapt", {})
+    wrong_year = 0
     new = left = 0
+    blank_run = [0]                            # 연달아 빈 응답만 온 단지 수
     stop: list[str] = []                       # 중단 이유(있으면 더 부르지 않는다)
     try:
         # 1) 구별 단지 목록(받아 둔 것이 없을 때만 새로 받는다)과 우리 단지 맞추기
@@ -102,47 +143,89 @@ def kapt_update(sample: bool = False, transport=None, log=print, base: Path | No
             if not items:
                 continue
             cxs, _ = cx.assign(store.load(base, "trade", reg["sgg"]), [], ov)
+            seen.update(cxs)
+            built.update({cid: c.get("by") for cid, c in cxs.items()})
+            names.update({cid: cx._canon(c.get("name", "")) for cid, c in cxs.items()})
+            knames.update({k.get("kaptCode"): cx._canon(k.get("kaptName") or "") for k in items})
             pairs.extend(cx.match_kapt(cxs, items, ov).items())
 
-        # 2) 아직 없는 단지의 기본·상세 정보를 여러 줄로 나눠 받는다(한 건에 1.5초쯤 걸려 한 줄로는 며칠이 걸린다)
+        # 2) 아직 없거나 비어 있는 단지의 기본·상세 정보를 받는다(한 건에 1.5초쯤 — 시간 상한까지 받고 다음 실행에서 이어받는다)
         def fetch(code: str):
-            if stop or inf.calls >= budget - 2 or (deadline is not None and time.monotonic() > deadline):
+            old = info.get(code) or {}
+            got = {"basic": old.get("basic") or {}, "detail": old.get("detail") or {}}
+            if stop or inf.calls >= budget - 4 or (deadline is not None and time.monotonic() > deadline):
                 return code, None
             try:
-                b, _n = inf.get_page(cfg["endpoints"]["kapt_basic"], {"kaptCode": code})
-                d, _n = inf.get_page(cfg["endpoints"]["kapt_detail"], {"kaptCode": code})
+                for part, ep in (("basic", "kapt_basic"), ("detail", "kapt_detail")):
+                    for attempt in range(2):                      # 빈 응답이면 잠깐 쉬고 한 번 더
+                        if got[part]:
+                            break
+                        if attempt and pause:
+                            time.sleep(pause)
+                        rows, _n = inf.get_page(cfg["endpoints"][ep], {"kaptCode": code})
+                        got[part] = rows[0] if rows else {}
             except api.QuotaExceeded as e:
                 stop.append(f"{e} — 다음 실행에서 이어받음")
                 return code, None
             except api.ApiError as e:
                 stop.append(f"중단 — {e} (다음 실행에서 다시 시도)")
                 return code, None
-            return code, {"basic": b[0] if b else {}, "detail": d[0] if d else {}}
+            if not (got["basic"] and got["detail"]):
+                got["tries"] = int(old.get("tries", 0)) + 1       # 다음 실행에서 다시 받는다(KAPT_TRIES 번까지)
+            blank_run[0] = 0 if (got["basic"] or got["detail"]) else blank_run[0] + 1
+            if blank_run[0] >= KAPT_BLANK_STOP and not stop:
+                stop.append(f"빈 응답이 {KAPT_BLANK_STOP}곳 연달아 옴 — 다음 실행에서 다시 시도")
+            return code, got
 
-        todo = list(dict.fromkeys(code for _cid, code in pairs if code not in info))
+        def need(code: str) -> bool:
+            e = info.get(code)
+            return e is None or (not (e.get("basic") and e.get("detail")) and int(e.get("tries", 0)) < KAPT_TRIES)
+
+        todo = [code for code in dict.fromkeys(code for _cid, code in pairs) if need(code)]
         with ThreadPoolExecutor(workers) as pool:
             for code, got in pool.map(fetch, todo):
                 if got is None:
                     left += 1
                     continue
                 info[code] = got
-                new += 1
-                if new % 200 == 0:
-                    log(f"[K-apt]  … 새로 {new:,}개 받음")
+                if got["basic"] and got["detail"]:
+                    new += 1
+                    if new % 200 == 0:
+                        log(f"[K-apt]  … 새로 {new:,}개 받음")
+                else:
+                    left += 1
     except api.QuotaExceeded as e:
         stop.append(f"{e} — 다음 실행에서 이어받음")
     except api.ApiError as e:
         # 선택 기능이 실패해도 매일 갱신은 계속돼야 한다. 이유만 남기고 다음 실행에서 다시 시도한다.
         stop.append(f"중단 — {e} (다음 실행에서 다시 시도)")
     finally:
+        specs = {cid: s for cid, s in specs.items() if cid not in seen}     # 이번에 맞춰 본 단지는 새 결과로 바꾼다
+        share: dict[str, int] = {}
+        for _cid, code in pairs:
+            share[code] = share.get(code, 0) + 1
         for cid, code in pairs:
-            if code in info:
-                specs[cid] = {"kapt": code, **kapt_spec(info[code]["basic"], info[code]["detail"])}
+            e = info.get(code)
+            if e and (e.get("basic") or e.get("detail")):
+                # 이름만으로 붙인 것이 맞는지 준공연도로 한 번 더 본다(이름이 똑같으면 3년, 아니면 1년까지 차이 허용).
+                ky = str((e.get("basic") or {}).get("kaptUsedate") or "")[:4]
+                by = str(built.get(cid) or "")
+                if cid not in manual and ky.isdigit() and by.isdigit() and \
+                        abs(int(ky) - int(by)) > (3 if names.get(cid) == knames.get(code) else 1):
+                    wrong_year += 1
+                    continue
+                specs[cid] = {"kapt": code, **kapt_spec(e.get("basic") or {}, e.get("detail") or {})}
+                if share[code] > 1:        # K-apt 한 단지에 우리 단지 여럿(1~5단지를 한 단지로 올린 경우 등) — 세대수는 합친 값
+                    specs[cid]["shared"] = share[code]
         store.write_json(kdir / "info.json", info)
         store.write_json(kdir / "specs.json", specs)
     if stop:
         log(f"[K-apt] {stop[0]}")
-    log(f"[K-apt] 스펙 보유 단지 {len(specs):,} (새로 {new:,} · 남음 {left:,} · 호출 {lst.calls + inf.calls})")
+    for shape, n in sorted(blanks.items(), key=lambda kv: -kv[1])[:3]:
+        log(f"[K-apt] 빈 응답 {n:,}번: {shape}")
+    filled = sum(1 for s in specs.values() if s.get("hh"))
+    log(f"[K-apt] 세대수 있는 단지 {filled:,} / 이름으로 맞춘 단지 {len(pairs):,} (새로 {new:,} · 남음 {left:,} · "
+        f"준공연도가 달라 뺀 곳 {wrong_year:,} · 호출 {lst.calls + inf.calls})")
     return len(specs)
 
 
@@ -260,9 +343,13 @@ def macro_update(sample: bool = False, log=print) -> dict:
 
 
 # ── AI 주간 글(Gemini) ───────────────────────────────
-PROMPT = """너는 부동산 통계 요약 작성자다. 아래 JSON 의 숫자만 사용해 {region} 아파트 시장 주간 요약을 한국어 5~7문장으로 써라.
-규칙: JSON 에 없는 숫자는 절대 쓰지 않는다(개수·순위·합계·반올림한 값도 새로 만들지 않는다). 전망·예측·매수/매도 권유·수익 보장 표현을 쓰지 않는다. 사실만 담담하게 쓴다.
-JSON:
+PROMPT = """너는 부동산 통계 요약 작성자다. 아래 '사실'만 가지고 {region} 아파트 시장 주간 요약을 한국어 5~7문장으로 써라.
+규칙:
+- 숫자는 '사실'에 적힌 것만 쓰고, 적힌 단위(%, 만원, 억, 건, ㎡)를 숫자 바로 뒤에 그대로 붙인다. 단위 없는 숫자는 쓰지 않는다.
+- 새 숫자(개수·순위·합계·반올림한 값)를 만들지 않는다.
+- '~습니다' 체로, 부동산을 처음 보는 사람도 읽기 쉽게 쓴다. 목록·기호·굵은 글씨 없이 문장으로만 쓴다.
+- 전망·예측·매수/매도 권유·수익 보장 표현을 쓰지 않는다. 사실만 담담하게 쓴다.
+사실:
 {facts}"""
 
 
@@ -279,9 +366,11 @@ def ai_report(sample: bool = False, force: bool = False, log=print) -> int:
         rep = store.read_json(p)
         saved = Path(base) / "report" / f"ai_{p.stem}.json"
         old = store.read_json(saved)
-        if not force and old.get("asof") == rep["asof"] and old.get("text"):
-            continue   # 같은 기준일 글이 이미 있으면 다시 만들지 않는다(하루 1회 — 무료 한도 안)
-        prompt = PROMPT.format(region=rep["region"], facts=json.dumps(rep["facts"], ensure_ascii=False))
+        if (not force and old.get("asof") == rep["asof"] and old.get("text")
+                and not report.check_ai(old["text"], rep["facts"])):
+            continue   # 같은 기준일의 (검사를 통과하는) 글이 이미 있으면 다시 만들지 않는다(하루 1회 — 무료 한도 안)
+        # 단위가 붙은 문장을 재료로 준다(숫자만 든 JSON 을 주면 '변동률은 2.7이며'처럼 단위 없는 글이 나온다).
+        prompt = PROMPT.format(region=rep["region"], facts="\n".join(rep["lines"]))
         text, model = "", models[0]
         for model in models:           # 모델 이름이 바뀌어 없어졌으면 다음 후보로
             for _ in range(2):
@@ -291,13 +380,13 @@ def ai_report(sample: bool = False, force: bool = False, log=print) -> int:
                     log(f"[AI 글] {model} 호출 실패({LAST_ERR})")
                     break
                 try:
-                    text = doc["candidates"][0]["content"]["parts"][0]["text"].strip()
-                except (KeyError, IndexError, TypeError):
+                    text = doc["candidates"][0]["content"]["parts"][0]["text"].replace("*", "").strip()
+                except (KeyError, IndexError, TypeError, AttributeError):
                     text = ""
-                bad = report.verify_numbers(text, rep["facts"]) if text else ["응답 없음"]
+                bad = report.check_ai(text, rep["facts"]) if text else ["응답 없음"]
                 if not bad:
                     break
-                log(f"[AI 글] 숫자 검증 실패({len(bad)}건: {', '.join(bad[:5])}) — 다시 시도")
+                log(f"[AI 글] 검사 실패({len(bad)}건: {', '.join(bad[:5])}) — 다시 시도")
                 text = ""
             if text:
                 break

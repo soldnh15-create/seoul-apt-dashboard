@@ -107,9 +107,39 @@ def verify_numbers(text: str, f: dict) -> list[str]:
     return bad
 
 
+_UNIT = re.compile(r"\s?(?:%|％|퍼센트|억|만|천|건|㎡|제곱미터|평|년|월|일|개|곳|세대|층|위|배|원|주|차|단지|호|동|분기)")
+
+
+def _strings(obj, acc: list | None = None) -> list[str]:
+    acc = [] if acc is None else acc
+    if isinstance(obj, dict):
+        for v in obj.values():
+            _strings(v, acc)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            _strings(v, acc)
+    elif isinstance(obj, str):
+        acc.append(obj)
+    return acc
+
+
+def check_ai(text: str, f: dict) -> list[str]:
+    """AI 글을 실어도 되는지 검사한다. 문제 목록(비어 있으면 통과).
+    ① 지어낸 숫자 ② 단위 없는 숫자('변동률은 2.7이며'처럼 — 2026-11-14 실제로 이렇게 나와 읽을 수 없었다)."""
+    bad = verify_numbers(text, f)
+    t = text
+    for s in sorted(set(_strings(f)), key=len, reverse=True):   # 단지 이름·날짜 속 숫자는 단위 검사에서 뺀다
+        if len(s) >= 2:
+            t = t.replace(s, " ")
+    for m in _NUMS.finditer(t):
+        if not _UNIT.match(t[m.end():m.end() + 6]):
+            bad.append(f"{m.group()}(단위 없음)")
+    return bad
+
+
 def build(doc: dict, ai: dict | None = None) -> dict:
     f = facts(doc)
     out = {"asof": doc["asof"], "region": doc["short"], "facts": f, "lines": render(f), "ai": None}
-    if ai and ai.get("text") and ai.get("asof") == doc["asof"] and not verify_numbers(ai["text"], f):
+    if ai and ai.get("text") and ai.get("asof") == doc["asof"] and not check_ai(ai["text"], f):
         out["ai"] = {"text": ai["text"], "model": ai.get("model", ""), "generated": ai.get("generated", "")}
     return out

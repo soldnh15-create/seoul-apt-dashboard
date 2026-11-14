@@ -129,14 +129,14 @@ export async function render(el, r) {
       <div class="card"><h2>단지 정보</h2><dl class="dl">${[
           ['준공', sp.used ? esc(sp.used) : (apt.by ? `${apt.by}년` : '')],
           ['주소', esc([apt.gu, apt.umd, apt.jibun].filter(Boolean).join(' '))],
-          ['세대수 · 동수', sp.hh ? `${F.n(sp.hh)}세대${sp.dongs ? ` · ${sp.dongs}개 동` : ''}` : ''],
+          ['세대수 · 동수', sp.hh ? `${F.n(sp.hh)}세대${sp.dongs ? ` · ${sp.dongs}개 동` : ''}${sp.shared ? ' (같은 이름으로 묶인 단지 전체)' : ''}` : ''],
           ['최고 층', sp.top ? `${sp.top}층` : ''],
           ['주차', sp.parking ? `${F.n(sp.parking)}대${sp.hh ? ` (세대당 ${(sp.parking / sp.hh).toFixed(2)}대)` : ''}` : ''],
           ['난방', esc(sp.heat || '')], ['시공', esc(sp.builder || '')],
           ['가까운 역', geo.subway ? `${esc(geo.subway.name)} · ${F.m(geo.subway.dist)}` : ''],
           ['가까운 초등학교', geo.school ? `${esc(geo.school.name)} · ${F.m(geo.school.dist)}` : ''],
         ].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
-        ${apt.spec ? '' : '<p class="note">세대수·주차 같은 단지 정보는 준비 중이에요.</p>'}
+        ${apt.spec ? '' : '<p class="note">세대수·주차 정보는 공동주택관리정보시스템(K-apt)에 올라온 단지만 나와요. 아직 받는 중인 단지도 있어요.</p>'}
         <div class="row" style="margin-top:12px"><label class="small" for="target">내 목표가(억)</label>
           <input type="number" id="target" step="0.1" min="0" style="width:90px" placeholder="예: 12.5"><button class="btn sm" id="tsave">저장</button></div>
         <p class="note">목표가는 이 기기(브라우저)에만 저장돼요.</p></div>

@@ -316,6 +316,8 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
         all_t.sort(key=lambda t: t["date"])
         n12 = sum(1 for t in all_t if not t["cancel"] and t["date"] >= y1)
         hh = spec.get("hh")
+        # 회전율은 세대수가 이 단지만의 값일 때만(K-apt 한 단지에 우리 단지 여럿이 묶이면 세대수는 합친 값이라 계산하지 않는다)
+        turn = round(n12 / hh * 100, 1) if hh and not spec.get("shared") else None
         nh_dates = [t["date"] for t in all_t if "nh" in t and t["date"] >= list_from]
         for t in all_t:
             if t["date"] < list_from or t["cancel"]:
@@ -330,7 +332,7 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
         index_rows.append([
             cid, c["name"], reg["sgg"], c["umd"], c.get("by"), hh, main["a"], main["band"], main["recent"],
             main["ppy"], main["dd"], main["reb"], main["jr"], main["gap"], n12,
-            round(n12 / hh * 100, 1) if hh else None, main["chg1y"],
+            turn, main["chg1y"],
             spec.get("lat"), spec.get("lng"), sub, max(nh_dates) if nh_dates else None, main["stale"],
         ])
         all_r = [r for a in r_by.get(cid, {}) for r in r_by[cid][a]]
@@ -338,8 +340,8 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
         apts[cid] = {
             "id": cid, "name": c["name"], "sgg": reg["sgg"], "gu": reg["name"], "umd": c["umd"],
             "jibun": c.get("jibun", ""), "by": c.get("by"), "main": main["a"], "n12": n12,
-            "turn": round(n12 / hh * 100, 1) if hh else None,
-            "spec": {k: spec.get(k) for k in ("kapt", "hh", "dongs", "used", "parking", "heat", "top", "builder")
+            "turn": turn,
+            "spec": {k: spec.get(k) for k in ("kapt", "hh", "dongs", "used", "parking", "heat", "top", "builder", "shared")
                      if spec.get(k) is not None} or None,
             "geo": {k: spec.get(k) for k in ("lat", "lng", "subway", "school") if spec.get(k) is not None} or None,
             "types": tstats,
