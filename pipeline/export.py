@@ -87,10 +87,12 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
         gstats = res["acc"].stats(asof_ym)
         gstats["apts"] = len(res["apts"])
         gstats["jr"] = metrics.jr_med(res["jr"])
+        metrics.apply_matched_chg(gstats, res["chg"])
         dongs = []
         for umd, dacc in sorted(res["dong_acc"].items()):
             ds = dacc.stats(asof_ym)
             ds["jr"] = metrics.jr_med(res["jr_dong"].get(umd, []))
+            metrics.apply_matched_chg(ds, res["chg_dong"].get(umd), min_n=3)
             dongs.append({"umd": umd, **{k: ds[k] for k in ("ppy", "chg3m", "yoy", "vol3m", "volchg", "jr")}})
         store.write_json(out / "gu" / f"{reg['sgg']}.json", {
             "sgg": reg["sgg"], "name": reg["name"], "sido": reg["sido"], "asof": asof.isoformat(),
@@ -106,9 +108,11 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
         s = sidos.setdefault(reg["sido"], {
             "code": reg["sido"], "name": reg["sido_name"], "short": reg["sido_short"],
             "acc": metrics.SeriesAcc(bk), "weekly": Counter(), "age": defaultdict(list),
-            "gus": [], "newhighs": [], "anoms": [], "jr": []})
+            "gus": [], "newhighs": [], "anoms": [], "jr": [], "chg": {"c3": [], "cy": []}})
         s["acc"].merge(res["acc"])
         s["jr"].extend(res["jr"])
+        for k in ("c3", "cy"):
+            s["chg"][k].extend(res["chg"][k])
         s["weekly"].update(res["weekly"])
         for k, v in res["age"].items():
             s["age"][k].extend(v)
@@ -122,6 +126,7 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
     for code, s in sidos.items():
         kpi = s["acc"].stats(asof_ym)
         kpi["jr"] = metrics.jr_med(s["jr"])
+        metrics.apply_matched_chg(kpi, s["chg"])
         kpi["nh30"] = len(s["newhighs"])
         kpi["nh7"] = sum(1 for x in s["newhighs"] if x["date"] >= week_ago)
         doc = {

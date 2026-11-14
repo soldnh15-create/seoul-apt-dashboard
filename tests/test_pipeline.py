@@ -189,14 +189,37 @@ def test_region_jeonse_ratio_is_median_of_matched_pairs():
     assert metrics.jr_med([55.0, 60.0]) is None             # 표본 3개 미만이면 표시 안 함
 
 
+def test_region_change_compares_same_homes_not_mixed_medians():
+    """비싼 집이 덜 팔려 지역 중위 평단가가 내려가도, 같은 집끼리 보면 오른 것을 올랐다고 말한다."""
+    asof = dt.date(2024, 12, 31)
+    trades = []
+    for i in range(5):       # 싼 단지 5곳: 1년 전 5억 → 지금 5.5억(+10%), 계속 거래됨
+        kw = {"apt": f"싼단지{i}", "seq": f"11680-{i + 1}"}
+        trades += [_t("2023-11-10", 50000, **kw) | {"jibun": str(i)}, _t("2024-08-10", 52000, **kw) | {"jibun": str(i)},
+                   _t("2024-11-10", 55000, **kw) | {"jibun": str(i)}]
+    for i in range(5, 10):   # 비싼 단지 5곳: 1년 전에는 여러 번 팔렸지만 최근에는 한 번(+10%)
+        kw = {"apt": f"비싼단지{i}", "seq": f"11680-{i + 1}"}
+        trades += [_t("2023-11-10", 200000, **kw) | {"jibun": str(i)}] * 4
+        trades += [_t("2024-11-10", 220000, **kw) | {"jibun": str(i)}]
+    trades.sort(key=lambda t: t["date"])
+    cxs, _ = complexes.assign(trades, [])
+    res = metrics.process_gu(GU[0], trades, [], cxs, {}, CFG, asof)
+    raw = res["acc"].stats("2024-12")
+    assert raw["yoy"] < 0                                    # 섞어서 나누면 내린 것처럼 보인다
+    s = metrics.apply_matched_chg(dict(raw), res["chg"])
+    assert s["yoy"] == 10.0                                  # 같은 집끼리는 +10%
+    assert s["chg3m"] == round((55000 - 52000) / 52000 * 100, 1)   # 싼 단지 5곳만 직전 3개월 거래가 있음
+    assert metrics.apply_matched_chg({}, {"c3": [1.0] * 4, "cy": []})["chg3m"] is None   # 표본 5개 미만
+
+
 def test_report_skips_comparison_when_history_is_missing():
     base = {"region": "서울", "ppy": 4560, "yoy": None, "vol_last": None, "up": [], "down": [], "jr": None,
             "nh30": 0, "nh7": 0, "newhighs": [], "cancel": None}
-    first = report.render(base | {"chg3m": None})[0]
-    assert first.endswith("4,560만원입니다.") and "변동" not in first
-    assert "2.1% 올랐습니다" in report.render(base | {"chg3m": 2.1})[0]
-    assert "1.5% 내렸습니다" in report.render(base | {"chg3m": -1.5})[0]
-    assert "변동이 없었습니다" in report.render(base | {"chg3m": 0})[0]
+    none = report.render(base | {"chg3m": None})
+    assert none[0].endswith("4,560만원입니다.") and not any("직전 3개월" in x for x in none)
+    assert "직전 3개월보다 2.1% 올랐습니다" in report.render(base | {"chg3m": 2.1})[1]
+    assert "1.5% 내렸습니다" in report.render(base | {"chg3m": -1.5})[1]
+    assert "변동이 없었습니다" in report.render(base | {"chg3m": 0})[1]
 
 
 def test_series_stats_windows():

@@ -208,7 +208,16 @@ def type_stats(a: int, trs: list[dict], rts: list[dict], asof: dt.date, cfg: dic
     highs = [t["price"] for t in base if t["date"] >= two_y and t["floor"] is not None and t["floor"] > lf]
     area = med([t["area"] for t in valid])
     ok = jeonse is not None and not stale
+    # 지역 변동률의 재료: 같은 집(단지·면적)의 최근 3개월 중위가를 직전 3개월·1년 전 같은 3개월과 비교한다.
+    ym = asof.isoformat()[:7]
+
+    def mwin(end: str):
+        lo = ym_add(end, -2)
+        return med([t["price"] for t in base if lo <= t["date"][:7] <= end])
+
+    m_cur = mwin(ym)
     return {
+        "_c3": pct(m_cur, mwin(ym_add(ym, -3)), 2), "_cy": pct(m_cur, mwin(ym_add(ym, -12)), 2),
         "a": a, "area": round(area, 2), "band": band_of(area, bands), "n": len(valid),
         "recent": recent, "rn": len(rec), "last_d": last["date"], "stale": 1 if stale else 0,
         "peak": peak, "peak_d": peak_d, "dd": pct(recent, peak),
@@ -264,6 +273,10 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
     # 지역 전세가율 = 같은 단지·같은 면적끼리 맞춘 전세가율들의 중위값(서로 다른 집을 섞어 나누지 않는다).
     jr_all: list[float] = []
     jr_dong: dict[str, list[float]] = defaultdict(list)
+    # 지역 변동률도 같은 방식: 평단가 중위값끼리 나누면 '어떤 집이 팔렸는지'에 따라 출렁이므로,
+    # 같은 집의 변동률을 모아 그 중위값을 쓴다. c3 = 직전 3개월 대비, cy = 1년 전 대비.
+    chg_all: dict[str, list[float]] = {"c3": [], "cy": []}
+    chg_dong: dict[str, dict[str, list[float]]] = defaultdict(lambda: {"c3": [], "cy": []})
     for cid, types in t_by.items():
         c = complexes[cid]
         spec = specs.get(cid) or {}
@@ -271,6 +284,11 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
         for a in sorted(types):
             st = type_stats(a, types[a], r_by.get(cid, {}).get(a, []), asof, cfg, bands)
             if st:
+                for k in ("c3", "cy"):
+                    v = st.pop("_" + k)
+                    if v is not None:
+                        chg_all[k].append(v)
+                        chg_dong[c["umd"]][k].append(v)
                 tstats.append(st)
                 if st["jr"] is not None and st["rn"]:      # 최근 6개월 안에 매매가 있는 면적만
                     jr_all.append(st["jr"])
@@ -319,12 +337,20 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
         }
     return {"acc": acc, "dong_acc": dict(dong_acc), "weekly": weekly, "age": dict(age),
             "index_rows": index_rows, "newhighs": newhighs, "anoms": anoms, "apts": apts,
-            "jr": jr_all, "jr_dong": dict(jr_dong)}
+            "jr": jr_all, "jr_dong": dict(jr_dong), "chg": chg_all, "chg_dong": dict(chg_dong)}
 
 
 def jr_med(xs: list[float], min_n: int = 3):
     """맞춘 전세가율 목록의 중위값. 표본이 너무 적으면 None."""
     return round(med(xs), 1) if len(xs) >= min_n else None
+
+
+def apply_matched_chg(stats: dict, chg: dict | None, min_n: int = 5) -> dict:
+    """지역 요약의 변동률(chg3m·yoy)을 '같은 집끼리 비교한 변동률의 중위값'으로 바꾼다. 표본이 적으면 None."""
+    chg = chg or {}
+    stats["chg3m"] = jr_med(chg.get("c3", []), min_n)
+    stats["yoy"] = jr_med(chg.get("cy", []), min_n)
+    return stats
 
 
 def weekly_json(weekly: Counter, asof: dt.date, weeks: int = 26) -> dict:

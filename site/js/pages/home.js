@@ -52,11 +52,11 @@ export async function render(el, r) {
     </div>
     ${pv ? `<div class="card since"><b>지난 방문(${esc(pv.asof)} 기준) 이후</b> 새 신고가 ${F.n(sinceN)}건이 더해졌어요. ${Object.keys(S.watch).length ? '<a href="#/my">관심 단지 변화 보기 →</a>' : ''}</div>` : ''}
     <div class="kpis">
-      ${kpiCard('중위 평단가 (3.3㎡당)', F.man(k.ppy), `직전 3개월 대비 <b class="${cls(k.chg3m)}">${F.pct(k.chg3m)}</b>`)}
+      ${kpiCard('중위 평단가 (3.3㎡당)', F.man(k.ppy), `같은 집끼리 비교 · 직전 3개월 대비 <b class="${cls(k.chg3m)}">${F.pct(k.chg3m)}</b>`)}
       ${kpiCard('지난달 매매 신고', `${F.n(k.vol_last)}건`, `그 전달 ${F.n(k.vol_prev)}건`)}
       ${kpiCard('전세가율', F.pct0(k.jr), '같은 단지·면적끼리 비교한 중간값')}
       ${kpiCard('최근 30일 신고가', `${F.n(k.nh30)}건`, `최근 7일 ${F.n(k.nh7)}건`)}
-      ${kpiCard('1년 전 대비', F.pct(k.yoy), '같은 3개월 평단가 비교', cls(k.yoy))}
+      ${kpiCard('1년 전 대비', F.pct(k.yoy), '같은 단지·면적끼리 비교한 중간값', cls(k.yoy))}
       ${kpiCard('전고점 대비', F.pct(k.dd), '월 중위 평단가 기준', cls(k.dd))}
       ${kpiCard('해제 거래 비율', F.pct0(k.cancel), '최근 3개월')}
       ${kpiCard('직거래 비율', F.pct0(k.direct), '최근 3개월')}
@@ -106,8 +106,8 @@ export async function render(el, r) {
     cols: [
       { k: 'name', label: '구', fmt: v => `<b>${esc(v)}</b>` },
       { k: 'ppy', label: '평단가', num: 1, fmt: v => F.man(v), tip: '최근 3개월 중위, 3.3㎡당' },
-      { k: 'chg3m', label: '3개월', num: 1, color: 1, fmt: v => F.pct(v), tip: '직전 3개월 대비' },
-      { k: 'yoy', label: '1년', num: 1, color: 1, fmt: v => F.pct(v) },
+      { k: 'chg3m', label: '3개월', num: 1, color: 1, fmt: v => F.pct(v), tip: '같은 단지·면적끼리 비교 · 직전 3개월 대비' },
+      { k: 'yoy', label: '1년', num: 1, color: 1, fmt: v => F.pct(v), tip: '같은 단지·면적끼리 비교 · 1년 전 같은 3개월 대비' },
       { k: 'vol3m', label: '거래량', num: 1, fmt: v => F.n(v), tip: '지난 3개월(끝난 달) 매매 건수' },
       { k: 'volchg', label: '거래 증감', num: 1, color: 1, fmt: v => F.pct(v) },
       { k: 'jr', label: '전세가율', num: 1, fmt: v => F.pct0(v) },

@@ -22,7 +22,7 @@ async function list(el) {
     <div class="card"><h2>${esc(d.name)}</h2><div class="guc">${[...d.gus].sort((a, b) => (b.ppy || 0) - (a.ppy || 0)).map(g => `
       <a href="#/gu/${g.sgg}"><div class="kpi"><div class="lab">${esc(g.name)}</div><div class="val">${F.man(g.ppy)}</div>
       <div class="sub"><span class="${cls(g.chg3m)}">${F.pct(g.chg3m)}</span> <span class="muted">· ${F.n(g.vol3m)}건</span></div></div></a>`).join('')}</div>
-      <p class="note">숫자 = 최근 3개월 중위 평단가(3.3㎡당) · 직전 3개월 대비 · 지난 3개월 거래량</p></div>`).join('');
+      <p class="note">숫자 = 최근 3개월 중위 평단가(3.3㎡당) · 직전 3개월 대비(같은 집끼리 비교) · 지난 3개월 거래량</p></div>`).join('');
 }
 
 export async function render(el, r) {
@@ -35,7 +35,7 @@ export async function render(el, r) {
     <div class="head"><div><h1>${esc(g.name)}</h1><p class="muted small">거래 기준일 ${g.asof} · 단지 ${F.n(s.apts)}곳</p></div>
       <select id="go" aria-label="다른 구로 이동">${Object.entries(D.guName).map(([c, n]) => `<option value="${c}" ${c === sgg ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
     <div class="kpis">
-      ${kpiCard('중위 평단가 (3.3㎡당)', F.man(s.ppy), `직전 3개월 대비 <b class="${cls(s.chg3m)}">${F.pct(s.chg3m)}</b>`)}
+      ${kpiCard('중위 평단가 (3.3㎡당)', F.man(s.ppy), `같은 집끼리 비교 · 직전 3개월 대비 <b class="${cls(s.chg3m)}">${F.pct(s.chg3m)}</b>`)}
       ${kpiCard('지난 3개월 거래량', `${F.n(s.vol3m)}건`, `그 전 3개월 대비 <b class="${cls(s.volchg)}">${F.pct(s.volchg)}</b>`)}
       ${kpiCard('전세가율', F.pct0(s.jr), '같은 단지·면적끼리 비교한 중간값')}
       ${kpiCard('전고점 대비', F.pct(s.dd), `1년 전 대비 ${F.pct(s.yoy)}`, cls(s.dd))}

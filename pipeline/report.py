@@ -24,7 +24,7 @@ def facts(doc: dict) -> dict:
     gus = [g for g in doc["gus"] if g.get("chg3m") is not None]
     up = sorted(gus, key=lambda g: g["chg3m"], reverse=True)[:3]
     down = sorted(gus, key=lambda g: g["chg3m"])[:3]
-    busy = sorted([g for g in doc["gus"] if g.get("volchg") is not None],
+    busy = sorted([g for g in doc["gus"] if (g.get("volchg") or 0) > 0],     # 늘어난 구만(다 줄었으면 칸을 뺀다)
                   key=lambda g: g["volchg"], reverse=True)[:3]
     nh = sorted(doc["newhighs"], key=lambda x: x.get("rise") or 0, reverse=True)[:5]
     return {
@@ -43,10 +43,12 @@ def facts(doc: dict) -> dict:
 def render(f: dict) -> list[str]:
     if f["ppy"]:
         # 비교할 과거 자료가 아직 없으면(처음 채우는 중) 비교 문장을 빼고 숫자만 말한다.
-        lines = [f"{f['region']} 아파트 중위 평단가는 최근 3개월 기준 3.3㎡당 {f['ppy']:,}만원입니다."
-                 + (f" 직전 3개월보다 {_chg(f['chg3m'])}." if f["chg3m"] is not None else "")]
+        lines = [f"{f['region']} 아파트 중위 평단가는 최근 3개월 기준 3.3㎡당 {f['ppy']:,}만원입니다."]
     else:
         lines = [f"{f['region']} 평단가를 계산할 거래가 부족합니다."]
+    # 변동률은 같은 단지·같은 면적끼리 비교한 값의 중간값(어떤 집이 팔렸는지에 따라 출렁이지 않게).
+    if f["chg3m"] is not None:
+        lines.append(f"같은 단지·같은 면적끼리 비교하면 직전 3개월보다 {_chg(f['chg3m'])}.")
     if f["yoy"] is not None:
         lines.append(f"1년 전 같은 기간보다는 {_chg(f['yoy'])}.")
     if f["vol_last"] is not None:
@@ -54,9 +56,9 @@ def render(f: dict) -> list[str]:
         lines.append(f"지난달 신고된 매매는 {f['vol_last']:,}건으로 그 전달({f['vol_prev']:,}건)보다 "
                      f"{abs(d):,}건 {'늘었습니다' if d >= 0 else '줄었습니다'}. 신고 기한(계약 후 30일)이 남아 더 늘 수 있습니다.")
     if f["up"]:
-        lines.append("평단가가 많이 오른 구: " + ", ".join(f"{g['name']}({g['chg3m']:+}%)" for g in f["up"]) + ".")
+        lines.append("많이 오른 구: "+ ", ".join(f"{g['name']}({g['chg3m']:+}%)" for g in f["up"]) + ".")
     if f["down"]:
-        lines.append("평단가가 덜 오르거나 내린 구: " + ", ".join(f"{g['name']}({g['chg3m']:+}%)" for g in f["down"]) + ".")
+        lines.append("덜 오르거나 내린 구: "+ ", ".join(f"{g['name']}({g['chg3m']:+}%)" for g in f["down"]) + ".")
     if f["jr"] is not None:
         lines.append(f"전세가율(같은 단지·같은 면적의 전세가 ÷ 매매가, 중간값)은 {f['jr']}%입니다.")
     lines.append(f"최근 30일 신고가 거래는 {f['nh30']:,}건(최근 7일 {f['nh7']:,}건)입니다.")
