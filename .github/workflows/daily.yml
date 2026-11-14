@@ -29,7 +29,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240      # 수집 상한(settings.yaml collect_minutes_budget) + 계산·검증·배포 여유
     env:
       DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
       KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
