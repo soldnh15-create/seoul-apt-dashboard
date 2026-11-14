@@ -124,6 +124,11 @@ def test_rent_rows_attach_to_trade_complex():
     assert un2 == []
 
 
+def test_nameless_complex_gets_dong_prefix():
+    cxs, _ = complexes.assign([_t("2024-01-01", 1, apt="(50-5)", seq="11680-9"), _t("2024-01-01", 1)], [])
+    assert cxs["11680-9"]["name"] == "역삼동 (50-5)" and cxs["11680-1"]["name"] == "가나 마을"
+
+
 def test_kapt_matching_needs_same_dong_and_similar_name():
     cxs, _ = complexes.assign([_t("2024-01-01", 1), _t("2024-01-01", 1, apt="다라", seq="11680-2")], [])
     kapt = [{"kaptCode": "A1", "kaptName": "가나마을아파트", "bjdCode": "1168010100"},

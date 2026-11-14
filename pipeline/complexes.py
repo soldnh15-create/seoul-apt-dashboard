@@ -67,6 +67,10 @@ def assign(trades: list[dict], rents: list[dict], ov: dict | None = None) -> tup
             if r.get("by"):
                 c["by"] = r["by"]
         r["cid"] = cid
+    for c in complexes.values():
+        # 신고된 이름이 비었거나 '(50-5)'처럼 지번뿐이면 검색·목록에서 알아볼 수 있게 동 이름을 앞에 붙인다.
+        if not norm_name(c.get("name", "")):
+            c["name"] = f"{c.get('umd', '')} {c.get('name') or c.get('jibun', '')}".strip()
     for cid, name in (ov.get("rename") or {}).items():
         if cid in complexes:
             complexes[cid]["name"] = name

@@ -72,7 +72,7 @@ export async function render(el, r) {
       <div class="chips" id="rk-ctl"><button class="chip on" data-k="n12" data-d="-1">거래 많은 순</button><button class="chip" data-k="chg1y" data-d="-1">1년 많이 오른 순</button>
         <button class="chip" data-k="dd" data-d="1">고점 대비 많이 내린 순</button><button class="chip" data-k="jr" data-d="-1">전세가율 높은 순</button></div></div>
       <div id="t-rk"><p class="muted small">불러오는 중…</p></div>
-      <p class="note">각 단지의 대표 면적 기준. 1년 넘게 거래가 없는 단지는 빼요. 순위일 뿐 추천이 아니에요.</p></div>
+      <p class="note">각 단지의 대표 면적 기준. 1년 넘게 거래가 없는 단지와 전용 40㎡ 미만(원룸형)은 빼요. 순위일 뿐 추천이 아니에요.</p></div>
     <div class="card">
       <div class="head"><h2>신고가 거래</h2>
         <div class="chips" id="nh-ctl"><button class="chip" data-v="7">최근 7일</button><button class="chip on" data-v="30">최근 30일</button></div></div>
@@ -132,7 +132,8 @@ export async function render(el, r) {
   // 단지 순위는 색인을 받은 뒤에 채운다(첫 화면을 늦추지 않게)
   Promise.all([loadIndex(), import('./gu.js')]).then(([index, gu]) => {
     const sggs = new Set(d.gus.map(g => g.sgg));
-    const rows = index.filter(o => sggs.has(o.sgg) && !o.stale);
+    // 원룸형(전용 40㎡ 미만)은 분양 물량이 한꺼번에 신고돼 순위를 왜곡하므로 순위에서만 뺀다(검색·조건 검색에는 그대로 있음).
+    const rows = index.filter(o => sggs.has(o.sgg) && !o.stale && o.a >= 40);
     const cols = [{ k: 'gu', label: '구' }, ...gu.APT_COLS.filter(c => !['umd', 'by', 'hh'].includes(c.k)), { k: 'chg1y', label: '1년', num: 1, color: 1, fmt: v => F.pct(v) }];
     const show = (k, dir) => table($('#t-rk', el), { cols, rows: rows.filter(o => o[k] != null), sort: k, dir, limit: 10, csv: `${d.short}_단지순위_${d.asof}.csv` });
     show('n12', -1);
