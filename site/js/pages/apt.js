@@ -41,7 +41,7 @@ export async function render(el, r) {
       ${kpiCard('전세 · 전세가율', t.jeonse ? `${F.eok(t.jeonse)}` : '-', t.jr != null ? `전세가율 <b>${F.pct0(t.jr)}</b> · 갭 <b>${F.eok(t.gap)}</b>` : '최근 전세 거래 없음')}
       ${kpiCard('1년 전 대비', F.pct(t.chg1y), t.reb != null ? `고점 뒤 저점(${F.eok(t.trough)}) 대비 ${F.pct(t.reb)}` : '고점 이후 거래 없음', cls(t.chg1y))}
       ${kpiCard('저층 / 그 외 층', `${F.eokS(t.low)} / ${F.eokS(t.high)}`, `${D.meta.params.low_floor_max}층 이하 / 초과 · 최근 2년 중위`)}
-      ${kpiCard('1년 거래 · 회전율', `${F.n(apt.n12)}건`, apt.turn != null ? `세대수 대비 ${F.pct0(apt.turn)}` : '세대수 정보 없음')}
+      ${kpiCard('1년 거래 · 회전율', `${F.n(apt.n12)}건`, apt.turn != null ? `세대수 대비 ${F.pct0(apt.turn)}` : apt.spec && apt.spec.shared ? '여러 단지가 한 묶음이라 회전율은 계산하지 않아요' : '세대수 정보 없음')}
       ${target ? kpiCard('내 목표가', F.eok(target), `현재 시세가 목표가보다 <b class="${cls(t.recent - target)}">${F.pct((t.recent - target) / target * 100)}</b>`) : ''}`;
 
     const pt = x => ({ value: [x[0], x[3]], f: x[2], fl: x[4] });
@@ -136,7 +136,7 @@ export async function render(el, r) {
           ['가까운 역', geo.subway ? `${esc(geo.subway.name)} · ${F.m(geo.subway.dist)}` : ''],
           ['가까운 초등학교', geo.school ? `${esc(geo.school.name)} · ${F.m(geo.school.dist)}` : ''],
         ].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
-        ${apt.spec ? '' : '<p class="note">세대수·주차 정보는 공동주택관리정보시스템(K-apt)에 올라온 단지만 나와요. 아직 받는 중인 단지도 있어요.</p>'}
+        ${apt.spec ? '' : '<p class="note">세대수·주차 정보는 공동주택관리정보시스템(K-apt)에 올라온 단지만 나와요(큰 단지 위주).</p>'}
         <div class="row" style="margin-top:12px"><label class="small" for="target">내 목표가(억)</label>
           <input type="number" id="target" step="0.1" min="0" style="width:90px" placeholder="예: 12.5"><button class="btn sm" id="tsave">저장</button></div>
         <p class="note">목표가는 이 기기(브라우저)에만 저장돼요.</p></div>

@@ -423,6 +423,19 @@ def test_ai_text_without_units_is_rejected():
     assert report.check_ai(bad, f) == ["2.7(단위 없음)", "4560(단위 없음)", "93500(단위 없음)", "56.6(단위 없음)"]
 
 
+def test_report_examples_skip_thinly_traded_new_highs():
+    """2026-11-14 실제: 10년간 7건 거래된 면적의 신고가가 '+66.9%'로 리포트 맨 앞에 섰다 — 거래가 꾸준한 면적만 예시로 든다."""
+    base = {"gu": "광진구", "a": 59, "price": 150000, "date": "2026-11-02"}
+    doc = {"asof": "2026-11-13", "short": "서울", "gus": [],
+           "kpi": {k: None for k in ("ppy", "chg3m", "yoy", "vol_last", "vol_prev", "jr", "cancel", "direct")}
+           | {"nh30": 3, "nh7": 1},
+           "newhighs": [{**base, "name": "드문단지", "rise": 66.9, "pd": "2021-03-01", "pn": 6},
+                        {**base, "name": "오래된고점", "rise": 30.0, "pd": "2021-03-01", "pn": 40},
+                        {**base, "name": "꾸준한단지", "rise": 4.2, "pd": "2026-06-20", "pn": 40},
+                        {**base, "name": "옛자료", "rise": 50.0}]}
+    assert [x["name"] for x in report.facts(doc)["newhighs"]] == ["꾸준한단지"]
+
+
 def test_csv_export_for_other_teams(built, monkeypatch):
     base, out, _ = built
     monkeypatch.setattr(config, "data_base", lambda sample=None: base)

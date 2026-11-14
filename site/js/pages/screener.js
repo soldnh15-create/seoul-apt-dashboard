@@ -96,7 +96,7 @@ export async function render(el, r) {
     // 값이 없어서 빠진 단지가 있으면 이유를 알려 준다(조건을 넣자마자 다 사라져 보이지 않게)
     $('#miss', el).innerHTML = Object.entries(miss).map(([k, n]) => {
       const f = FIELDS.find(x => x.k === k);
-      return `<p class="note">'${esc(f.label.replace(/\(.*\)/, ''))}' 값이 없는 단지 ${F.n(n)}곳은 이 조건에서 빠졌어요.${f.need === 'kapt' ? ' 세대수는 공동주택관리정보시스템(K-apt)에 올라온 단지만 있고, 아직 받는 중인 단지도 있어요.' : f.need ? ' 이 자료는 매일 조금씩 채워지고 있어요.' : ''}</p>`;
+      return `<p class="note">'${esc(f.label.replace(/\(.*\)/, ''))}' 값이 없는 단지 ${F.n(n)}곳은 이 조건에서 빠졌어요.${f.need === 'kapt' ? ' 세대수는 공동주택관리정보시스템(K-apt)에 올라온 단지만 있어요(큰 단지 위주).' : f.need ? ' 이 자료는 매일 조금씩 채워지고 있어요.' : ''}</p>`;
     }).join('');
     setQuery('/screener', { c: encState(st) });
   };

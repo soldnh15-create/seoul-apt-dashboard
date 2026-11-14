@@ -2,6 +2,7 @@
 AI 글(선택)은 숫자 검증을 통과했을 때만 함께 싣는다."""
 from __future__ import annotations
 
+import datetime as dt
 import re
 
 
@@ -19,6 +20,20 @@ def _eok(manwon) -> str:
     return (f"{e}억" + (f" {m:,}만" if m else "")) if e else f"{m:,}만"
 
 
+NH_MIN_PRIOR = 10      # 예시로 드는 신고가: 그 면적의 이전 거래가 이만큼은 있고
+NH_PRIOR_DAYS = 365    # 직전 최고가가 이 기간 안에 나온 것만(1년 넘게 거래가 뜸했던 면적은 '+45%'처럼 튄다)
+
+
+def _solid_high(x: dict) -> bool:
+    """리포트에서 예시로 들 만한 신고가인가.
+    거래가 드문 면적은 몇 년 전 가격과 비교돼 '+66.9%'처럼 크게 나온다(2026-11-14 실제: 10년간 7건 거래된 면적).
+    시장 흐름을 말하는 글에 그런 숫자가 앞에 서지 않게, 거래가 꾸준한 면적의 최근 최고가와 비교한 것만 고른다."""
+    pd, d = x.get("pd"), x.get("date")
+    if not pd or not d or (x.get("pn") or 0) < NH_MIN_PRIOR:
+        return False
+    return (dt.date.fromisoformat(d) - dt.date.fromisoformat(pd)).days <= NH_PRIOR_DAYS
+
+
 def facts(doc: dict) -> dict:
     k = doc["kpi"]
     gus = [g for g in doc["gus"] if g.get("chg3m") is not None]
@@ -26,7 +41,7 @@ def facts(doc: dict) -> dict:
     down = sorted(gus, key=lambda g: g["chg3m"])[:3]
     busy = sorted([g for g in doc["gus"] if (g.get("volchg") or 0) > 0],     # 늘어난 구만(다 줄었으면 칸을 뺀다)
                   key=lambda g: g["volchg"], reverse=True)[:3]
-    nh = sorted(doc["newhighs"], key=lambda x: x.get("rise") or 0, reverse=True)[:5]
+    nh = sorted([x for x in doc["newhighs"] if _solid_high(x)], key=lambda x: x.get("rise") or 0, reverse=True)[:5]
     return {
         "region": doc["short"], "asof": doc["asof"], "ppy": k["ppy"], "chg3m": k["chg3m"], "yoy": k["yoy"],
         "vol_last": k["vol_last"], "vol_prev": k["vol_prev"],

@@ -183,6 +183,7 @@ def type_stats(a: int, trs: list[dict], rts: list[dict], asof: dt.date, cfg: dic
         if t["price"] > run:
             if i >= min_prior:
                 t["nh"] = run
+                t["nh_d"], t["nh_n"] = peak_d, i      # 직전 최고가가 나온 날, 그전까지 거래 수(리포트 예시 고르기용)
             run, peak_d = t["price"], t["date"]
     peak = run
     rec = [t["price"] for t in base if t["date"] >= recent_from]
@@ -325,7 +326,8 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
             ent = {"id": cid, "name": c["name"], "sgg": reg["sgg"], "gu": reg["name"], "a": int(t["area"]),
                    "price": t["price"], "date": t["date"], "floor": t["floor"]}
             if "nh" in t:
-                newhighs.append({**ent, "prev": t["nh"], "rise": pct(t["price"], t["nh"])})
+                newhighs.append({**ent, "prev": t["nh"], "rise": pct(t["price"], t["nh"]),
+                                 "pd": t.get("nh_d"), "pn": t.get("nh_n")})
             if "anom" in t:
                 anoms.append({**ent, "ref": t["anom"], "disc": pct(t["price"], t["anom"])})
         sub = (spec.get("subway") or {}).get("dist")
