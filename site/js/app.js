@@ -40,6 +40,12 @@ function applyBrand(meta) {
     const a = $(id);
     if (s.home_url) { a.href = s.home_url; if (id === '#cta' && s.home_label) a.textContent = s.home_label; } else a.hidden = true;
   }
+  if (s.home_url && s.promo_title) {
+    $('#promo-title').textContent = s.promo_title;
+    $('#promo-text').textContent = s.promo_text || '';
+    const a = $('#cta3'); a.href = s.home_url; a.textContent = s.home_label || '자세히 보기';
+    $('#promo').hidden = false;
+  }
   if (s.disclaimer) $('#disclaimer').textContent = s.disclaimer;
   if (s.source) $('#source').textContent = s.source;
   $('#updated').textContent = `거래 기준일 ${meta.asof} · 갱신 ${meta.updated.replace('T', ' ').slice(0, 16)}`;

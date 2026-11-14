@@ -8,7 +8,10 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="강남박공의 서울 아파트 실거래 추적시스템">
 <meta property="og:description" content="매일 자동 갱신 · 신고가 · 낙폭 · 전세가율 · 단지 비교 · 조건 검색 — 무료">
-<meta property="og:image" content="og.png">
+<!-- 카카오톡·스레드 등에 공유했을 때 미리보기가 뜨려면 전체 주소여야 한다. 저장소를 복사해 쓰면 아래 두 줄의 주소를 자기 것으로 바꾼다. -->
+<meta property="og:url" content="https://soldnh15-create.github.io/seoul-apt-dashboard/">
+<meta property="og:image" content="https://soldnh15-create.github.io/seoul-apt-dashboard/og.png">
+<meta property="og:site_name" content="강남박공">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#14284b">
 <link rel="manifest" href="manifest.webmanifest">
@@ -47,6 +50,13 @@
 </header>
 <div id="banner"></div>
 <main id="app" tabindex="-1"><p class="loading">불러오는 중…</p></main>
+<!-- 강의 안내(문구·주소는 config/site.yaml). promo_title 을 비우면 나타나지 않는다. -->
+<aside class="promo" id="promo" hidden aria-label="강의 안내">
+  <div class="promo-in">
+    <div><b id="promo-title"></b><p id="promo-text"></p></div>
+    <a id="cta3" class="cta" href="#" target="_blank" rel="noopener"></a>
+  </div>
+</aside>
 <footer class="foot">
   <p id="disclaimer">이 사이트는 투자 권유가 아니며, 데이터는 국토교통부 등 공공데이터를 가공한 것입니다.</p>
   <p class="muted"><span id="source">자료: 국토교통부 실거래가 공개시스템(공공데이터포털)</span> · <span id="updated"></span></p>
