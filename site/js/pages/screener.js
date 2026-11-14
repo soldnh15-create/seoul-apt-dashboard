@@ -2,18 +2,31 @@
 import { $, $$, D, S, save, F, esc, table, loadIndex, encState, decState, setQuery, share, toast } from '../core.js';
 import { APT_COLS } from './gu.js';
 
+// drop: 값이 음수(-30%)로 저장돼 있지만 화면에서는 '하락 30'처럼 양수로 받는 항목.
+// need: 그 자료(단지 정보·좌표)가 들어와 있을 때만 고를 수 있는 항목.
 export const FIELDS = [
   { k: 'a', label: '대표 면적(㎡)' }, { k: 'price', label: '최근 시세(억)', scale: 10000 },
-  { k: 'ppy', label: '평단가(만원/3.3㎡)' }, { k: 'dd', label: '전고점 대비(%)' }, { k: 'reb', label: '저점 대비 반등(%)' },
-  { k: 'jr', label: '전세가율(%)' }, { k: 'gap', label: '갭(억)', scale: 10000 }, { k: 'hh', label: '세대수' },
+  { k: 'ppy', label: '평단가(만원/3.3㎡)' }, { k: 'dd', label: '전고점 대비 하락(%)', drop: true }, { k: 'reb', label: '저점 대비 반등(%)' },
+  { k: 'jr', label: '전세가율(%)' }, { k: 'gap', label: '갭(억)', scale: 10000 }, { k: 'hh', label: '세대수', need: 'kapt' },
   { k: 'by', label: '준공연도' }, { k: 'age', label: '연식(년)' }, { k: 'n12', label: '최근 1년 거래(건)' },
-  { k: 'turn', label: '회전율(%)' }, { k: 'chg1y', label: '1년 전 대비(%)' }, { k: 'sub', label: '지하철역 거리(m)' },
+  { k: 'turn', label: '회전율(%)', need: 'kapt' }, { k: 'chg1y', label: '1년 전 대비(%)' }, { k: 'sub', label: '지하철역 거리(m)', need: 'geo' },
 ];
 const EXAMPLES = [
-  { name: '84㎡ · 고점 -15% 이하 · 전세가율 60%↑ · 500세대↑', st: { band: 'std', gu: [], conds: [{ k: 'dd', op: 'le', v: -15 }, { k: 'jr', op: 'ge', v: 60 }, { k: 'hh', op: 'ge', v: 500 }] } },
-  { name: '소형 · 갭 2억 이하 · 역 500m 안', st: { band: 'small', gu: [], conds: [{ k: 'gap', op: 'le', v: 2 }, { k: 'sub', op: 'le', v: 500 }] } },
-  { name: '준공 10년 이내 · 1,000세대↑', st: { band: 'all', gu: [], conds: [{ k: 'age', op: 'le', v: 10 }, { k: 'hh', op: 'ge', v: 1000 }] } },
+  { name: '84㎡ · 고점보다 15%↓ · 전세가율 60%↑', st: { band: 'std', gu: [], conds: [{ k: 'dd', op: 'ge', v: 15 }, { k: 'jr', op: 'ge', v: 60 }] } },
+  { name: '소형 · 갭 2억 이하 · 1년 거래 20건↑', st: { band: 'small', gu: [], conds: [{ k: 'gap', op: 'le', v: 2 }, { k: 'n12', op: 'ge', v: 20 }] } },
+  { name: '준공 10년 이내 · 고점보다 10%↓', st: { band: 'all', gu: [], conds: [{ k: 'age', op: 'le', v: 10 }, { k: 'dd', op: 'ge', v: 10 }] } },
+  { name: '84㎡ · 500세대↑ · 전세가율 60%↑', need: ['kapt'], st: { band: 'std', gu: [], conds: [{ k: 'hh', op: 'ge', v: 500 }, { k: 'jr', op: 'ge', v: 60 }] } },
+  { name: '소형 · 갭 2억 이하 · 역 500m 안', need: ['geo'], st: { band: 'small', gu: [], conds: [{ k: 'gap', op: 'le', v: 2 }, { k: 'sub', op: 'le', v: 500 }] } },
 ];
+
+// 하락 항목을 예전 방식(-15 이하)으로 적은 조건·공유 주소도 새 방식(15 이상)으로 바꿔 읽는다.
+export function normConds(st) {
+  for (const c of st.conds || []) {
+    const f = FIELDS.find(x => x.k === c.k);
+    if (f && f.drop && typeof c.v === 'number' && c.v < 0) { c.v = -c.v; c.op = c.op === 'ge' ? 'le' : 'ge'; }
+  }
+  return st;
+}
 
 export function applyFilter(index, st) {
   return index.filter(o => {
@@ -23,8 +36,9 @@ export function applyFilter(index, st) {
     for (const c of st.conds || []) {
       const f = FIELDS.find(x => x.k === c.k);
       if (!f || c.v === '' || c.v == null || isNaN(c.v)) continue;
-      const v = o[c.k];
+      let v = o[c.k];
       if (v == null) return false;
+      if (f.drop) v = -v;                       // -30% 내림 → 하락 30
       const t = c.v * (f.scale || 1);
       if (c.op === 'ge' ? v < t : v > t) return false;
     }
@@ -32,20 +46,35 @@ export function applyFilter(index, st) {
   });
 }
 
+// 조건을 사람이 읽는 한 줄로(무엇으로 걸렀는지 바로 보이게)
+export function describe(st) {
+  return (st.conds || []).map(c => {
+    const f = FIELDS.find(x => x.k === c.k);
+    if (!f || c.v === '' || c.v == null || isNaN(c.v)) return '';
+    return `${f.label.replace(/\(.*\)/, '')} ${c.v}${(f.label.match(/\((.*)\)/) || [])[1] || ''} ${c.op === 'ge' ? '이상' : '이하'}`;
+  }).filter(Boolean).join(' · ');
+}
+
 export async function render(el, r) {
   const index = await loadIndex(), meta = D.meta;
-  let st = (r.q.c && decState(r.q.c)) || { band: 'all', gu: [], conds: [{ k: 'dd', op: 'le', v: -10 }] };
+  // 처음 화면: 원룸형(40㎡ 미만)은 빼고, 전고점보다 10% 넘게 내린 단지
+  let st = (r.q.c && decState(r.q.c)) || { band: 'all', gu: [], conds: [{ k: 'a', op: 'ge', v: 40 }, { k: 'dd', op: 'ge', v: 10 }] };
   st.conds = st.conds || []; st.gu = st.gu || [];
+  normConds(st);
+  const feat = meta.features || {};
+  const fields = FIELDS.filter(f => !f.need || feat[f.need]);
+  const examples = EXAMPLES.filter(e => (e.need || []).every(n => feat[n]));
   el.innerHTML = `
     <h1>조건 검색</h1><p class="muted small">조건을 쌓아서 단지를 골라 보세요. 조건은 주소에 담겨서 그대로 공유할 수 있어요. (1년 넘게 거래가 없는 단지는 빼요)</p>
     <div class="card">
-      <div class="row" style="margin-bottom:10px"><span class="muted small">예시</span>${EXAMPLES.map((e, i) => `<button class="chip" data-ex="${i}">${esc(e.name)}</button>`).join('')}</div>
+      <div class="row" style="margin-bottom:10px"><span class="muted small">예시</span>${examples.map((e, i) => `<button class="chip" data-ex="${i}">${esc(e.name)}</button>`).join('')}</div>
       <div class="row" style="margin-bottom:10px"><span class="muted small">내 조건</span><span id="presets" class="chips"></span></div>
       <div class="row" style="margin-bottom:10px"><span class="muted small">면적</span><div class="chips" id="band"></div></div>
       <div class="row" style="margin-bottom:10px"><span class="muted small">지역</span>
         <select id="gu-add"><option value="">구 추가…</option>${Object.entries(D.guName).map(([c, n]) => `<option value="${c}">${esc(n)}</option>`).join('')}</select>
         <span id="gus" class="chips"></span></div>
       <div id="conds"></div>
+      <p class="note" style="margin:6px 0 0">숫자를 바꾸면 아래 결과가 바로 바뀌어요(따로 누를 버튼 없음). 예: '전고점 대비 하락 30 이상' = 전고점보다 30% 넘게 내린 단지.</p>
       <div class="row" style="margin-top:8px"><button class="btn sm" id="add">+ 조건 추가</button>
         <button class="btn sm" id="savep">이 조건 저장</button><button class="btn sm primary" id="share">조건 공유</button></div>
     </div>
@@ -56,22 +85,23 @@ export async function render(el, r) {
   const run = () => {
     const rows = applyFilter(index, st);
     t.update(rows);
-    $('#cnt', el).textContent = `${F.n(rows.length)} / ${F.n(index.length)}개 단지`;
+    const d = describe(st);
+    $('#cnt', el).innerHTML = `${d ? `${esc(d)} → ` : ''}<b>${F.n(rows.length)}</b> / ${F.n(index.length)}개 단지`;
     setQuery('/screener', { c: encState(st) });
   };
   const drawForm = () => {
     $('#band', el).innerHTML = `<button class="chip ${st.band === 'all' ? 'on' : ''}" data-v="all">전체</button>` + meta.bands.map(b => `<button class="chip ${st.band === b.key ? 'on' : ''}" data-v="${b.key}">${esc(b.label)}</button>`).join('');
     $('#gus', el).innerHTML = st.gu.map(c => `<button class="chip on" data-g="${c}">${esc(D.guName[c] || c)} ✕</button>`).join('') || '<span class="muted small">전체</span>';
     $('#conds', el).innerHTML = st.conds.map((c, i) => `<div class="cond" data-i="${i}">
-      <select class="f" aria-label="항목">${FIELDS.map(f => `<option value="${f.k}" ${f.k === c.k ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}</select>
+      <select class="f" aria-label="항목">${fields.map(f => `<option value="${f.k}" ${f.k === c.k ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}</select>
       <select class="o" aria-label="비교"><option value="ge" ${c.op === 'ge' ? 'selected' : ''}>이상 (≥)</option><option value="le" ${c.op === 'le' ? 'selected' : ''}>이하 (≤)</option></select>
       <input class="v" type="number" step="any" value="${c.v ?? ''}" aria-label="값"><button class="btn sm del" aria-label="조건 삭제">✕</button></div>`).join('');
     $('#presets', el).innerHTML = S.presets.screener.map((p, i) => `<button class="chip" data-p="${i}">${esc(p.name)}</button><button class="chip" data-pd="${i}" aria-label="삭제">✕</button>`).join('') || '<span class="muted small">저장한 조건이 없어요</span>';
   };
   el.onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.ex) st = structuredClone(EXAMPLES[+b.dataset.ex].st);
-    else if (b.dataset.p) st = structuredClone(S.presets.screener[+b.dataset.p].st);
+    if (b.dataset.ex) st = structuredClone(examples[+b.dataset.ex].st);
+    else if (b.dataset.p) st = normConds(structuredClone(S.presets.screener[+b.dataset.p].st));
     else if (b.dataset.pd) { S.presets.screener.splice(+b.dataset.pd, 1); save(); }
     else if (b.dataset.v && b.closest('#band')) st.band = b.dataset.v;
     else if (b.dataset.g) st.gu = st.gu.filter(c => c !== b.dataset.g);
@@ -87,6 +117,8 @@ export async function render(el, r) {
     const row = e.target.closest('.cond'); if (!row) return;
     const c = st.conds[+row.dataset.i];
     c.k = $('.f', row).value; c.op = $('.o', row).value; c.v = $('.v', row).value === '' ? '' : +$('.v', row).value;
+    // 하락 항목은 -30 으로 적어도 30 으로 읽는다(부호 때문에 헷갈리지 않게)
+    if (typeof c.v === 'number' && c.v < 0 && (FIELDS.find(x => x.k === c.k) || {}).drop) c.v = -c.v;
     run();
   };
   el.oninput = e => { if (e.target.classList.contains('v')) el.onchange(e); };

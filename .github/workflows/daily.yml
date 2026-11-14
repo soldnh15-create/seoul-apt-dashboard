@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "daily = 최근 3개월 / backfill = 과거 채우기(이어받기)"
+        description: "daily = 최근 3개월 / backfill = 과거 채우기(이어받기) / deploy = 새로 받지 않고 화면만 다시 올리기(약 3분)"
         type: choice
-        options: [daily, backfill]
+        options: [daily, backfill, deploy]
         default: daily
       weekly:
         description: "주간 알림(텔레그램)도 지금 보내기"
@@ -62,15 +62,18 @@ jobs:
       # backfill = 최근 3개월은 항상 다시 받고 + 아직 못 받은 과거 달을 한도 안에서 이어받는다.
       # 과거를 다 채운 뒤에는 저절로 '최근 3개월만' 받게 된다.
       - name: 수집(최근 3개월 + 남은 과거 이어받기)
+        if: ${{ github.event.inputs.mode != 'deploy' }}
         run: python -m pipeline collect --mode ${{ github.event.inputs.mode || 'backfill' }}
 
       - name: 선택 기능(키가 없으면 자동으로 건너뜀)
+        if: ${{ github.event.inputs.mode != 'deploy' }}
         run: |
           python -m pipeline kapt
           python -m pipeline geo
           python -m pipeline macro
 
       - name: 수집 결과 저장(커밋)
+        if: ${{ github.event.inputs.mode != 'deploy' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
