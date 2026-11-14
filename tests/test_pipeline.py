@@ -189,6 +189,43 @@ def test_region_jeonse_ratio_is_median_of_matched_pairs():
     assert metrics.jr_med([55.0, 60.0]) is None             # 표본 3개 미만이면 표시 안 함
 
 
+def test_kapt_update_fetches_list_and_specs_then_reuses_cache(tmp_path):
+    """받아 둔 목록이 없으면 실제로 호출해야 한다(예전엔 빈 값으로 읽혀 한 번도 호출하지 않았다)."""
+    from pipeline import extras
+    quiet = lambda *_: None  # noqa: E731
+    collect.run("daily", sample=True, sggs=["11680"], base=tmp_path, log=quiet)
+    cxs, _ = complexes.assign(store.load(tmp_path, "trade", "11680"), [])
+    names = [(c["name"], c["umd"]) for c in cxs.values()][:3]
+    calls = []
+
+    def ok(body):
+        return 200, json.dumps({"response": {"header": {"resultCode": "00"}, "body": body}})
+
+    def transport(url, timeout):
+        calls.append(url)
+        if "getSigunguAptList4" in url:
+            items = [{"kaptCode": f"K{i}", "kaptName": n, "bjdCode": "1168000000", "as3": u}
+                     for i, (n, u) in enumerate(names)]
+            return ok({"items": items, "totalCount": len(items)})
+        if "getAphusBassInfoV5" in url:
+            return ok({"item": {"kaptdaCnt": "500", "kaptDongCnt": "5", "kaptUsedate": "20100315"}})
+        return ok({"item": {"kaptdPcnt": "100", "kaptdPcntu": "400"}})
+
+    n = extras.kapt_update(transport=transport, log=quiet, base=tmp_path, regs=GU[:1])
+    specs = store.read_json(tmp_path / "kapt" / "specs.json")
+    assert n == len(specs) >= 1 and (tmp_path / "kapt" / "list" / "11680.json").exists()
+    one = next(iter(specs.values()))
+    assert one["hh"] == 500 and one["parking"] == 500 and one["used"] == "2010-03-15"
+    before = len(calls)
+    extras.kapt_update(transport=transport, log=quiet, base=tmp_path, regs=GU[:1])
+    assert len(calls) == before                               # 두 번째는 받아 둔 것만 쓴다
+
+    def denied(url, timeout):
+        return 403, "Forbidden"
+    (tmp_path / "kapt" / "list" / "11680.json").unlink()
+    assert extras.kapt_update(transport=denied, log=quiet, base=tmp_path, regs=GU[:1]) == len(specs)   # 실패해도 멈추지 않음
+
+
 def test_region_change_compares_same_homes_not_mixed_medians():
     """비싼 집이 덜 팔려 지역 중위 평단가가 내려가도, 같은 집끼리 보면 오른 것을 올랐다고 말한다."""
     asof = dt.date(2024, 12, 31)

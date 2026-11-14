@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -20,8 +21,13 @@ def _env(name: str) -> str:
     return os.environ.get(name, "").strip()
 
 
+LAST_ERR = ""   # 마지막 _json_call 실패 이유(상태 코드나 오류 종류만 — 주소·키는 담지 않는다)
+
+
 def _json_call(url: str, headers: dict | None = None, body: dict | None = None, timeout: float = 30):
-    """JSON 호출. 실패하면 None (키가 든 주소는 절대 출력하지 않는다)."""
+    """JSON 호출. 실패하면 None (키가 든 주소는 절대 출력하지 않는다). 실패 이유는 LAST_ERR 에 남긴다."""
+    global LAST_ERR
+    LAST_ERR = ""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     h = {"User-Agent": "apt-dashboard/1.0", **(headers or {})}
     if data:
@@ -29,8 +35,17 @@ def _json_call(url: str, headers: dict | None = None, body: dict | None = None, 
     try:
         with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=h), timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8", errors="replace"))
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
-        return None
+    except urllib.error.HTTPError as e:
+        LAST_ERR = f"HTTP {e.code}"
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+        LAST_ERR = type(e).__name__
+    return None
+
+
+def _deadline(cfg: dict):
+    """선택 기능 하나가 한 번 실행에 쓸 시간 상한(분). 넘으면 저장하고 다음 실행에서 이어받는다."""
+    minutes = float(cfg.get("extras_minutes_budget", 30) or 0)
+    return time.monotonic() + minutes * 60 if minutes > 0 else None
 
 
 # ── K-apt 단지정보 ───────────────────────────────────
@@ -52,44 +67,57 @@ def kapt_spec(basic: dict, detail: dict) -> dict:
     return {k: v for k, v in out.items() if v is not None}
 
 
-def kapt_update(sample: bool = False, transport=None, log=print) -> int:
+def kapt_update(sample: bool = False, transport=None, log=print, base: Path | None = None,
+                regs: list[dict] | None = None) -> int:
     key = api.service_key()
     if sample or (not key and transport is None):
         log("[K-apt] 인증키 없음 — 건너뜀")
         return 0
-    cfg, base = config.settings(), config.data_base(False)
+    cfg = config.settings()
+    base = Path(base) if base else config.data_base(False)
     kw = {"transport": transport} if transport else {}
     lst = api.Client(key or "TEST", cfg, parser=api.parse_json_page, **kw)
     inf = api.Client(key or "TEST", cfg, parser=api.parse_json_page, key_name="ServiceKey", **kw)
     budget = int(cfg.get("kapt_call_budget", 4500))
+    deadline = _deadline(cfg) if transport is None else None
     kdir = Path(base) / "kapt"
     info = store.read_json(kdir / "info.json")
     specs = store.read_json(kdir / "specs.json")
     ov = config.overrides()
+    new = left = 0
     try:
-        for reg in config.regions():
+        for reg in regs or config.regions():
             lp = kdir / "list" / f"{reg['sgg']}.json"
-            items = store.read_json(lp, default=None)
+            items = store.read_json(lp) if lp.exists() else None    # 받아 둔 목록이 없을 때만 새로 받는다
             if items is None and lst.calls < budget:
                 items = lst.fetch_all(cfg["endpoints"]["kapt_list"], {"sigunguCode": reg["sgg"]})
-                store.write_json(lp, items)
+                if items:                                           # 빈 목록은 저장하지 않는다(다음에 다시 받게)
+                    store.write_json(lp, items)
+                log(f"[K-apt] {reg['name']}: 단지 목록 {len(items):,}개")
             if not items:
                 continue
             cxs, _ = cx.assign(store.load(base, "trade", reg["sgg"]), [], ov)
             for cid, code in cx.match_kapt(cxs, items, ov).items():
                 if code not in info:
-                    if inf.calls >= budget - 2:
+                    if inf.calls >= budget - 2 or (deadline is not None and time.monotonic() > deadline):
+                        left += 1
                         continue
                     b, _n = inf.get_page(cfg["endpoints"]["kapt_basic"], {"kaptCode": code})
                     d, _n = inf.get_page(cfg["endpoints"]["kapt_detail"], {"kaptCode": code})
                     info[code] = {"basic": b[0] if b else {}, "detail": d[0] if d else {}}
+                    new += 1
+                    if new % 200 == 0:
+                        log(f"[K-apt]  … 새로 {new:,}개 받음")
                 specs[cid] = {"kapt": code, **kapt_spec(info[code]["basic"], info[code]["detail"])}
     except api.QuotaExceeded as e:
         log(f"[K-apt] {e} — 다음 실행에서 이어받음")
+    except api.ApiError as e:
+        # 선택 기능이 실패해도 매일 갱신은 계속돼야 한다. 이유만 남기고 다음 실행에서 다시 시도한다.
+        log(f"[K-apt] 중단 — {e} (다음 실행에서 다시 시도)")
     finally:
         store.write_json(kdir / "info.json", info)
         store.write_json(kdir / "specs.json", specs)
-    log(f"[K-apt] 스펙 보유 단지 {len(specs):,} (호출 {lst.calls + inf.calls})")
+    log(f"[K-apt] 스펙 보유 단지 {len(specs):,} (새로 {new:,} · 남음 {left:,} · 호출 {lst.calls + inf.calls})")
     return len(specs)
 
 
@@ -105,15 +133,26 @@ def geo_update(sample: bool = False, limit: int = 3000, log=print) -> int:
     base = config.data_base(False)
     geo = store.read_json(Path(base) / "geo" / "geo.json")
     h = {"Authorization": f"KakaoAK {key}"}
-    done = 0
+    done = fails = left = 0
+    deadline = _deadline(config.settings())
+    stop = ""
     for reg in config.regions():
+        if stop:
+            break
         cxs, _ = cx.assign(store.load(base, "trade", reg["sgg"]), [], config.overrides())
         for cid, c in cxs.items():
-            if cid in geo or done >= limit:
+            if cid in geo:
+                continue
+            if done >= limit or (deadline is not None and time.monotonic() > deadline):
+                left += 1
                 continue
             q = urllib.parse.quote(f"{reg['sido_name']} {reg['name']} {c['umd']} {c['jibun']}")
             doc = _json_call(f"{KAKAO}/address.json?query={q}", h)
             if doc is None:
+                fails += 1
+                if fails >= 5 and done == 0:     # 처음부터 계속 실패 = 키·사용 설정 문제. 더 두드리지 않는다.
+                    stop = f"카카오 호출이 계속 실패({LAST_ERR}) — 키와 '카카오맵' 사용 설정을 확인"
+                    break
                 continue
             docs = doc.get("documents") or []
             if not docs:
@@ -129,8 +168,12 @@ def geo_update(sample: bool = False, limit: int = 3000, log=print) -> int:
                     ent[name] = {"name": hit["place_name"], "dist": int(hit.get("distance") or 0)}
             geo[cid] = ent
             done += 1
+            if done % 500 == 0:
+                log(f"[좌표]  … 새로 {done:,}개")
     store.write_json(Path(base) / "geo" / "geo.json", geo)
-    log(f"[좌표] 새로 {done}개 · 누적 {len(geo):,}")
+    if stop:
+        log(f"[좌표] 중단 — {stop}")
+    log(f"[좌표] 새로 {done:,}개 · 누적 {len(geo):,} · 남음 {left:,} · 실패 {fails:,}")
     return done
 
 
@@ -147,7 +190,11 @@ def macro_update(sample: bool = False, log=print) -> dict:
         for name, s in (cfg.get("ecos") or {}).items():
             url = (f"https://ecos.bok.or.kr/api/StatisticSearch/{urllib.parse.quote(ekey)}/json/kr/1/1000/"
                    f"{s['stat']}/{s['cycle']}/{end.year - 12}01/{end.year}{end.month:02d}/{s['item']}")
-            rows = ((_json_call(url) or {}).get("StatisticSearch") or {}).get("row") or []
+            doc = _json_call(url) or {}
+            rows = (doc.get("StatisticSearch") or {}).get("row") or []
+            if not rows:     # 키·통계코드 문제를 기록에서 알아볼 수 있게(ECOS 는 오류도 200 으로 준다)
+                err = (doc.get("RESULT") or {}).get("MESSAGE") or LAST_ERR or "빈 응답"
+                log(f"[거시] {name}: 받지 못함 — {err}")
             if rows:
                 out[name] = {"t": [f"{r['TIME'][:4]}-{r['TIME'][4:6]}" for r in rows],
                              "v": [float(r["DATA_VALUE"]) for r in rows]}
@@ -173,7 +220,7 @@ def macro_update(sample: bool = False, log=print) -> dict:
 
 # ── AI 주간 글(Gemini) ───────────────────────────────
 PROMPT = """너는 부동산 통계 요약 작성자다. 아래 JSON 의 숫자만 사용해 {region} 아파트 시장 주간 요약을 한국어 5~7문장으로 써라.
-규칙: JSON 에 없는 숫자는 절대 쓰지 않는다. 전망·예측·매수/매도 권유·수익 보장 표현을 쓰지 않는다. 사실만 담담하게 쓴다.
+규칙: JSON 에 없는 숫자는 절대 쓰지 않는다(개수·순위·합계·반올림한 값도 새로 만들지 않는다). 전망·예측·매수/매도 권유·수익 보장 표현을 쓰지 않는다. 사실만 담담하게 쓴다.
 JSON:
 {facts}"""
 
@@ -184,28 +231,35 @@ def ai_report(sample: bool = False, force: bool = False, log=print) -> int:
         log("[AI 글] Gemini 키 없음 — 규칙 기반 요약만 사용")
         return 0
     base, out = config.data_base(False), config.SITE / "data"
-    model = (config.settings().get("gemini") or {}).get("model", "gemini-2.5-flash")
+    gcfg = config.settings().get("gemini") or {}
+    models = gcfg.get("models") or [gcfg.get("model", "gemini-2.5-flash")]
     made = 0
     for p in sorted((out / "report").glob("*.json")):
         rep = store.read_json(p)
         saved = Path(base) / "report" / f"ai_{p.stem}.json"
         old = store.read_json(saved)
-        if not force and old.get("generated", "") >= (dt.date.today() - dt.timedelta(days=6)).isoformat():
-            continue   # 주 1회만 생성(무료 한도)
+        if not force and old.get("asof") == rep["asof"] and old.get("text"):
+            continue   # 같은 기준일 글이 이미 있으면 다시 만들지 않는다(하루 1회 — 무료 한도 안)
         prompt = PROMPT.format(region=rep["region"], facts=json.dumps(rep["facts"], ensure_ascii=False))
-        text = ""
-        for _ in range(2):
-            doc = _json_call(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                             {"x-goog-api-key": key}, {"contents": [{"parts": [{"text": prompt}]}]}, 60) or {}
-            try:
-                text = doc["candidates"][0]["content"]["parts"][0]["text"].strip()
-            except (KeyError, IndexError, TypeError):
+        text, model = "", models[0]
+        for model in models:           # 모델 이름이 바뀌어 없어졌으면 다음 후보로
+            for _ in range(2):
+                doc = _json_call(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                                 {"x-goog-api-key": key}, {"contents": [{"parts": [{"text": prompt}]}]}, 60)
+                if doc is None:
+                    log(f"[AI 글] {model} 호출 실패({LAST_ERR})")
+                    break
+                try:
+                    text = doc["candidates"][0]["content"]["parts"][0]["text"].strip()
+                except (KeyError, IndexError, TypeError):
+                    text = ""
+                bad = report.verify_numbers(text, rep["facts"]) if text else ["응답 없음"]
+                if not bad:
+                    break
+                log(f"[AI 글] 숫자 검증 실패({len(bad)}건: {', '.join(bad[:5])}) — 다시 시도")
                 text = ""
-            bad = report.verify_numbers(text, rep["facts"]) if text else ["응답 없음"]
-            if not bad:
+            if text:
                 break
-            log(f"[AI 글] 숫자 검증 실패({len(bad)}건) — 다시 시도")
-            text = ""
         if not text:
             continue   # 검증을 통과하지 못한 글은 싣지 않는다
         ai = {"asof": rep["asof"], "text": text, "model": model, "generated": dt.date.today().isoformat()}

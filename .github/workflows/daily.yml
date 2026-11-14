@@ -13,7 +13,7 @@ on:
         options: [daily, backfill]
         default: daily
       weekly:
-        description: "주간 알림·AI 글도 지금 만들기"
+        description: "주간 알림(텔레그램)도 지금 보내기"
         type: boolean
         default: false
 
@@ -83,10 +83,9 @@ jobs:
       - name: 지표 계산과 사이트 데이터 만들기
         run: python -m pipeline build
 
-      - name: 주간 AI 글(월요일 · 키가 있을 때만)
-        if: ${{ github.event.inputs.weekly == 'true' || github.event_name == 'schedule' }}
-        run: |
-          if [ "$(date +%u)" = "1" ] || [ "${{ github.event.inputs.weekly }}" = "true" ]; then python -m pipeline ai-report; fi
+      # 요약 글은 그날 숫자와 맞아야 실리므로 매번 새로 만든다(하루 1회 호출 — 무료 한도 안). 키가 없으면 건너뛴다.
+      - name: AI 요약 글(키가 있을 때만)
+        run: python -m pipeline ai-report
 
       - name: 검증(실패하면 여기서 멈춤 — 배포 안 함)
         run: python -m pipeline validate --no-sample --update

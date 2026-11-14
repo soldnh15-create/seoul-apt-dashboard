@@ -51,5 +51,6 @@ rone:                       # 한국부동산원 R-ONE — 통계표 ID는 실�
   url: https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do
   weekly_sale_index: {statbl_id: "", cycle: "WK", itm_id: "", cls_id: ""}
   weekly_jeonse_index: {statbl_id: "", cycle: "WK", itm_id: "", cls_id: ""}
-gemini:
-  model: gemini-2.5-flash   # 무료 한도 모델명은 바뀔 수 있다(미확인)
+gemini:                     # 위에서부터 차례로 시도(모델 이름이 바뀌어 없어지면 다음 후보로). 실제 키로 확인 전(미확인)
+  models: [gemini-2.5-flash, gemini-flash-latest, gemini-2.0-flash]
+extras_minutes_budget: 30   # 선택 기능(단지 정보·좌표) 하나가 한 번 실행에 쓸 시간 상한(분). 남은 것은 다음 실행에서 이어받는다
