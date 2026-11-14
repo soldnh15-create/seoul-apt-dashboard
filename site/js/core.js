@@ -138,8 +138,11 @@ export function downloadCSV(name, head, rows) {
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' })), download: name });
   a.click(); URL.revokeObjectURL(a.href);
 }
-/** cols: [{k, label, num, color, fmt(v,row)→HTML, raw(v,row)→CSV값, tip}] */
+/** 그 자료(kapt = 단지 정보, geo = 좌표)가 사이트에 들어와 있는지. 없으면 관련 칸·조건을 숨긴다. */
+export const hasFeat = need => !need || !!(D.meta && D.meta.features && D.meta.features[need]);
+/** cols: [{k, label, num, color, fmt(v,row)→HTML, raw(v,row)→CSV값, tip, need}] */
 export function table(host, { cols, rows, sort = null, dir = -1, limit = 30, csv = null, empty = '해당하는 데이터가 없어요' }) {
+  cols = cols.filter(c => hasFeat(c.need));     // 자료가 아직 없는 칸은 '-'만 가득하므로 빼고 그린다
   let key = sort, d = dir, shown = limit;
   const sorted = () => !key ? rows : [...rows].sort((a, b) => {
     const x = a[key], y = b[key];

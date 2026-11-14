@@ -28,21 +28,23 @@ export function normConds(st) {
   return st;
 }
 
-export function applyFilter(index, st) {
+/** miss 를 넘기면 '그 값이 없어서 빠진 단지 수'를 항목별로 세어 준다(왜 사라졌는지 알려 주려고). */
+export function applyFilter(index, st, miss) {
   return index.filter(o => {
     if (o.stale) return false;
     if (st.band && st.band !== 'all' && o.band !== st.band) return false;
     if (st.gu && st.gu.length && !st.gu.includes(o.sgg)) return false;
+    let ok = true;
     for (const c of st.conds || []) {
       const f = FIELDS.find(x => x.k === c.k);
       if (!f || c.v === '' || c.v == null || isNaN(c.v)) continue;
       let v = o[c.k];
-      if (v == null) return false;
+      if (v == null) { if (miss) miss[c.k] = (miss[c.k] || 0) + 1; ok = false; continue; }
       if (f.drop) v = -v;                       // -30% 내림 → 하락 30
       const t = c.v * (f.scale || 1);
       if (c.op === 'ge' ? v < t : v > t) return false;
     }
-    return true;
+    return ok;
   });
 }
 
@@ -64,6 +66,9 @@ export async function render(el, r) {
   const feat = meta.features || {};
   const fields = FIELDS.filter(f => !f.need || feat[f.need]);
   const examples = EXAMPLES.filter(e => (e.need || []).every(n => feat[n]));
+  // 공유받은 주소·저장한 조건에 아직 자료가 없는 항목이 있으면 그 조건은 뺀다(전부 사라지지 않게)
+  const usable = s => { s.conds = (s.conds || []).filter(c => fields.some(f => f.k === c.k)); return s; };
+  usable(st);
   el.innerHTML = `
     <h1>조건 검색</h1><p class="muted small">조건을 쌓아서 단지를 골라 보세요. 조건은 주소에 담겨서 그대로 공유할 수 있어요. (1년 넘게 거래가 없는 단지는 빼요)</p>
     <div class="card">
@@ -78,15 +83,21 @@ export async function render(el, r) {
       <div class="row" style="margin-top:8px"><button class="btn sm" id="add">+ 조건 추가</button>
         <button class="btn sm" id="savep">이 조건 저장</button><button class="btn sm primary" id="share">조건 공유</button></div>
     </div>
-    <div class="card"><div class="head"><h2>결과</h2><span class="muted small" id="cnt"></span></div><div id="res"></div>
+    <div class="card"><div class="head"><h2>결과</h2><span class="muted small" id="cnt"></span></div><div id="miss"></div><div id="res"></div>
       <p class="note">조건에 맞는 단지를 나열한 것일 뿐, 매수 추천이 아니에요.</p></div>`;
 
-  const t = table($('#res', el), { cols: [{ k: 'gu', label: '구' }, ...APT_COLS, { k: 'gap', label: '갭', num: 1, fmt: v => F.eok(v) }, { k: 'sub', label: '역 거리', num: 1, fmt: v => F.m(v) }], rows: [], sort: 'dd', dir: 1, limit: 30, csv: `조건검색_${meta.asof}.csv` });
+  const t = table($('#res', el), { cols: [{ k: 'gu', label: '구' }, ...APT_COLS, { k: 'gap', label: '갭', num: 1, fmt: v => F.eok(v) }, { k: 'sub', label: '역 거리', num: 1, fmt: v => F.m(v), need: 'geo' }], rows: [], sort: 'dd', dir: 1, limit: 30, csv: `조건검색_${meta.asof}.csv` });
   const run = () => {
-    const rows = applyFilter(index, st);
+    const miss = {};
+    const rows = applyFilter(index, st, miss);
     t.update(rows);
     const d = describe(st);
     $('#cnt', el).innerHTML = `${d ? `${esc(d)} → ` : ''}<b>${F.n(rows.length)}</b> / ${F.n(index.length)}개 단지`;
+    // 값이 없어서 빠진 단지가 있으면 이유를 알려 준다(조건을 넣자마자 다 사라져 보이지 않게)
+    $('#miss', el).innerHTML = Object.entries(miss).map(([k, n]) => {
+      const f = FIELDS.find(x => x.k === k);
+      return `<p class="note">'${esc(f.label.replace(/\(.*\)/, ''))}' 값이 없는 단지 ${F.n(n)}곳은 이 조건에서 빠졌어요.${f.need ? ' 이 자료는 매일 조금씩 채워지고 있어요.' : ''}</p>`;
+    }).join('');
     setQuery('/screener', { c: encState(st) });
   };
   const drawForm = () => {
@@ -101,7 +112,7 @@ export async function render(el, r) {
   el.onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.ex) st = structuredClone(examples[+b.dataset.ex].st);
-    else if (b.dataset.p) st = normConds(structuredClone(S.presets.screener[+b.dataset.p].st));
+    else if (b.dataset.p) st = usable(normConds(structuredClone(S.presets.screener[+b.dataset.p].st)));
     else if (b.dataset.pd) { S.presets.screener.splice(+b.dataset.pd, 1); save(); }
     else if (b.dataset.v && b.closest('#band')) st.band = b.dataset.v;
     else if (b.dataset.g) st.gu = st.gu.filter(c => c !== b.dataset.g);

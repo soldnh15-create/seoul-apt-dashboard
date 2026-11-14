@@ -6,7 +6,7 @@ export const APT_COLS = [
   { k: 'name', label: '단지', fmt: (v, r) => `<b>${esc(v)}</b>${r.nh ? '<span class="tag nh">신고가</span>' : ''}` },
   { k: 'umd', label: '동' },
   { k: 'by', label: '준공', num: 1 },
-  { k: 'hh', label: '세대', num: 1, fmt: v => F.n(v) },
+  { k: 'hh', label: '세대', num: 1, fmt: v => F.n(v), need: 'kapt' },
   { k: 'a', label: '면적', num: 1, fmt: v => `${v}㎡`, tip: '거래가 가장 많은 대표 면적' },
   { k: 'price', label: '최근 시세', num: 1, fmt: v => F.eok(v), tip: '최근 6개월 중위 거래가(없으면 마지막 거래)' },
   { k: 'ppy', label: '평단가', num: 1, fmt: v => F.man(v) },
