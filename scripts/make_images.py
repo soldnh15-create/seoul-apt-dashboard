@@ -46,8 +46,8 @@ def og() -> Image.Image:
     bars(d, 820, 520, 70, 28, [150, 240, 330], 10)
     d.ellipse([1100, 150, 1150, 200], fill=ORANGE)
     d.text((80, 90), sc.get("brand", ""), font=font(64), fill=ORANGE)
-    d.text((80, 200), "서울 아파트", font=font(96), fill=WHITE)
-    d.text((80, 320), "실거래 대시보드", font=font(96), fill=WHITE)
+    d.text((80, 200), "서울 아파트", font=font(84), fill=WHITE)
+    d.text((80, 315), "실거래 추적시스템", font=font(84), fill=WHITE)
     d.text((80, 470), "매일 자동 갱신 · 신고가 · 전세가율 · 무료", font=font(36, False), fill=SOFT)
     return im
 
