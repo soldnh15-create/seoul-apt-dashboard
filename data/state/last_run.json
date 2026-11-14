@@ -1,17 +1,17 @@
 {
  "calls": {
-  "rent": 2318,
-  "trade": 1878
+  "rent": 468,
+  "trade": 424
  },
- "done": 3657,
+ "done": 803,
  "failed": [],
- "finished": "2026-11-14T13:36:07",
- "left": 803,
+ "finished": "2026-11-14T14:19:37",
+ "left": 150,
  "mode": "backfill",
- "planned": 4310,
- "rows": 1650577,
+ "planned": 803,
+ "rows": 328244,
  "sample": false,
  "skipped_suspicious": [],
- "started": "2026-11-14T11:06:07",
- "stopped": "실행 시간 150분 도달 — 다음 실행에서 이어받습니다"
+ "started": "2026-11-14T13:48:23",
+ "stopped": ""
 }
