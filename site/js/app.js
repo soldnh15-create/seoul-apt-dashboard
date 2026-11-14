@@ -43,7 +43,12 @@ function applyBrand(meta) {
   if (s.disclaimer) $('#disclaimer').textContent = s.disclaimer;
   if (s.source) $('#source').textContent = s.source;
   $('#updated').textContent = `거래 기준일 ${meta.asof} · 갱신 ${meta.updated.replace('T', ' ').slice(0, 16)}`;
+  const cov = meta.coverage;
   if (meta.sample) $('#banner').innerHTML = '<div class="banner" role="status">⚠ 가상 샘플 데이터입니다 — 실제 거래가 아닙니다(개발·시연용). 단지 이름도 모두 지어낸 것입니다.</div>';
+  else if (cov && cov.months < cov.target - 1) {
+    // 과거 자료를 며칠에 걸쳐 채우는 동안에는 '전고점·1년 전 대비'가 짧은 기간 기준이라는 점을 알린다.
+    $('#banner').innerHTML = `<div class="banner info" role="status">과거 자료를 채우는 중이에요 — 지금은 ${esc(cov.from.replace('-', '년 '))}월부터의 거래가 들어 있어요(목표 ${Math.round(cov.target / 12)}년치). 전고점·1년 전 대비 같은 숫자는 다 채워지면 정확해져요.</div>`;
+  }
 }
 
 function initSearch() {

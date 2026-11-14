@@ -37,7 +37,7 @@ export async function render(el, r) {
     <div class="kpis">
       ${kpiCard('중위 평단가 (3.3㎡당)', F.man(s.ppy), `직전 3개월 대비 <b class="${cls(s.chg3m)}">${F.pct(s.chg3m)}</b>`)}
       ${kpiCard('지난 3개월 거래량', `${F.n(s.vol3m)}건`, `그 전 3개월 대비 <b class="${cls(s.volchg)}">${F.pct(s.volchg)}</b>`)}
-      ${kpiCard('전세가율', F.pct0(s.jr), '전세 평단가 ÷ 매매 평단가')}
+      ${kpiCard('전세가율', F.pct0(s.jr), '같은 단지·면적끼리 비교한 중간값')}
       ${kpiCard('전고점 대비', F.pct(s.dd), `1년 전 대비 ${F.pct(s.yoy)}`, cls(s.dd))}
     </div>
     <div class="card"><h2>거래량과 평단가 추이</h2>

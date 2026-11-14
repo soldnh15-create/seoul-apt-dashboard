@@ -5,8 +5,11 @@ from __future__ import annotations
 import re
 
 
-def _sign(v) -> str:
-    return "변동 없음" if not v else (f"{abs(v)}% 상승" if v > 0 else f"{abs(v)}% 하락")
+def _chg(v) -> str:
+    """'2.1% 올랐습니다' 같은 서술어. 0 이면 변동 없음."""
+    if not v:
+        return "변동이 없었습니다"
+    return f"{abs(v)}% {'올랐습니다' if v > 0 else '내렸습니다'}"
 
 
 def _eok(manwon) -> str:
@@ -38,12 +41,14 @@ def facts(doc: dict) -> dict:
 
 
 def render(f: dict) -> list[str]:
-    lines = [
-        f"{f['region']} 아파트 중위 평단가는 최근 3개월 기준 3.3㎡당 {f['ppy']:,}만원으로, 직전 3개월보다 {_sign(f['chg3m'])}했습니다."
-        if f["ppy"] else f"{f['region']} 평단가를 계산할 거래가 부족합니다.",
-    ]
+    if f["ppy"]:
+        # 비교할 과거 자료가 아직 없으면(처음 채우는 중) 비교 문장을 빼고 숫자만 말한다.
+        lines = [f"{f['region']} 아파트 중위 평단가는 최근 3개월 기준 3.3㎡당 {f['ppy']:,}만원입니다."
+                 + (f" 직전 3개월보다 {_chg(f['chg3m'])}." if f["chg3m"] is not None else "")]
+    else:
+        lines = [f"{f['region']} 평단가를 계산할 거래가 부족합니다."]
     if f["yoy"] is not None:
-        lines.append(f"1년 전 같은 기간과 비교하면 {_sign(f['yoy'])}입니다.")
+        lines.append(f"1년 전 같은 기간보다는 {_chg(f['yoy'])}.")
     if f["vol_last"] is not None:
         d = f["vol_last"] - (f["vol_prev"] or 0)
         lines.append(f"지난달 신고된 매매는 {f['vol_last']:,}건으로 그 전달({f['vol_prev']:,}건)보다 "
@@ -53,7 +58,7 @@ def render(f: dict) -> list[str]:
     if f["down"]:
         lines.append("평단가가 덜 오르거나 내린 구: " + ", ".join(f"{g['name']}({g['chg3m']:+}%)" for g in f["down"]) + ".")
     if f["jr"] is not None:
-        lines.append(f"전세가율(전세 평단가 ÷ 매매 평단가)은 {f['jr']}%입니다.")
+        lines.append(f"전세가율(같은 단지·같은 면적의 전세가 ÷ 매매가, 중간값)은 {f['jr']}%입니다.")
     lines.append(f"최근 30일 신고가 거래는 {f['nh30']:,}건(최근 7일 {f['nh7']:,}건)입니다.")
     for x in f["newhighs"][:3]:
         lines.append(f"· {x['gu']} {x['name']} {x['a']}㎡ {_eok(x['price'])}원 (직전 최고가 대비 {x['rise']:+}%)")

@@ -76,6 +76,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data
           git diff --cached --quiet || git commit -m "데이터 갱신 $(date +%F)"
+          # 수집하는 동안 누가 코드를 올렸어도 받은 데이터를 잃지 않게, 최신 위에 얹어서 올린다.
+          git pull --rebase origin ${{ github.ref_name }}
           git push
 
       - name: 지표 계산과 사이트 데이터 만들기
@@ -93,6 +95,7 @@ jobs:
         run: |
           git add data/state
           git diff --cached --quiet || git commit -m "검증 기준 갱신 $(date +%F)"
+          git pull --rebase origin ${{ github.ref_name }}
           git push
 
       - uses: actions/configure-pages@v5
@@ -105,6 +108,7 @@ jobs:
           if [ "$(date +%u)" = "1" ] || [ "${{ github.event.inputs.weekly }}" = "true" ]; then python -m pipeline notify --weekly; else python -m pipeline notify; fi
           git add data/state
           git diff --cached --quiet || git commit -m "알림 기록 $(date +%F)"
+          git pull --rebase origin ${{ github.ref_name }}
           git push
 
   deploy:

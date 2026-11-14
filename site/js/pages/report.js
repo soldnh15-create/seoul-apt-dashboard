@@ -11,10 +11,10 @@ export async function render(el, r) {
     ${rep.ai ? `<div class="card report"><h2>AI 요약</h2>${rep.ai.text.split(/\n+/).map(p => `<p>${esc(p)}</p>`).join('')}
       <p class="note">${esc(rep.ai.model)}가 ${esc(rep.ai.generated)}에 작성. 글 속 숫자는 계산 값과 자동 대조를 통과한 것만 실어요.</p></div>` : ''}
     <div class="card report"><h2>핵심 요약</h2>${rep.lines.map(l => `<p>${esc(l)}</p>`).join('')}</div>
-    <div class="grid two">
-      <div class="card"><h2>평단가가 많이 오른 구</h2><dl class="dl">${f.up.map(g => `<dt>${esc(g.name)}</dt><dd class="${g.chg3m > 0 ? 'up' : 'down'}">${F.pct(g.chg3m)}</dd>`).join('')}</dl></div>
-      <div class="card"><h2>거래가 많이 늘어난 구</h2><dl class="dl">${f.busy.map(g => `<dt>${esc(g.name)}</dt><dd class="${g.volchg > 0 ? 'up' : 'down'}">${F.pct(g.volchg)}</dd>`).join('')}</dl></div>
-    </div>
+    ${f.up.length || f.busy.length ? `<div class="grid two">
+      ${f.up.length ? `<div class="card"><h2>평단가가 많이 오른 구</h2><dl class="dl">${f.up.map(g => `<dt>${esc(g.name)}</dt><dd class="${g.chg3m > 0 ? 'up' : 'down'}">${F.pct(g.chg3m)}</dd>`).join('')}</dl></div>` : ''}
+      ${f.busy.length ? `<div class="card"><h2>거래가 많이 늘어난 구</h2><dl class="dl">${f.busy.map(g => `<dt>${esc(g.name)}</dt><dd class="${g.volchg > 0 ? 'up' : 'down'}">${F.pct(g.volchg)}</dd>`).join('')}</dl></div>` : ''}
+    </div>` : ''}
     <p class="note">${esc(meta.site.disclaimer || '')} 전망이나 매수·매도 의견은 담지 않아요.</p>
     <p><a class="btn" href="#/">홈에서 자세히 보기</a></p>`;
 }

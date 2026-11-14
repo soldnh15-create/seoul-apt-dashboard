@@ -58,6 +58,7 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
     sidos: dict[str, dict] = {}
     index_rows, unmatched_all = [], []
     kapt_hit = 0
+    first_date = asof.isoformat()   # 들어 있는 가장 이른 매매 계약일(과거를 어디까지 채웠는지)
     for reg in regs:
         trades = store.load(base, "trade", reg["sgg"])
         rents = store.load(base, "rent", reg["sgg"])
@@ -66,6 +67,8 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
         for kind, rows in (("trade", trades), ("rent", rents)):
             if rows and not set(KINDS[kind]["cols"]) <= set(rows[0]):
                 stats["schema_errors"].append(f"{kind}:{reg['sgg']} 열 누락")
+        if trades:
+            first_date = min(first_date, min(t["date"] for t in trades))
         stats["trade"] += len(trades)
         stats["rent"] += len(rents)
         stats["by_gu"][reg["sgg"]] = len(trades)
@@ -83,9 +86,11 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
 
         gstats = res["acc"].stats(asof_ym)
         gstats["apts"] = len(res["apts"])
+        gstats["jr"] = metrics.jr_med(res["jr"])
         dongs = []
         for umd, dacc in sorted(res["dong_acc"].items()):
             ds = dacc.stats(asof_ym)
+            ds["jr"] = metrics.jr_med(res["jr_dong"].get(umd, []))
             dongs.append({"umd": umd, **{k: ds[k] for k in ("ppy", "chg3m", "yoy", "vol3m", "volchg", "jr")}})
         store.write_json(out / "gu" / f"{reg['sgg']}.json", {
             "sgg": reg["sgg"], "name": reg["name"], "sido": reg["sido"], "asof": asof.isoformat(),
@@ -101,8 +106,9 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
         s = sidos.setdefault(reg["sido"], {
             "code": reg["sido"], "name": reg["sido_name"], "short": reg["sido_short"],
             "acc": metrics.SeriesAcc(bk), "weekly": Counter(), "age": defaultdict(list),
-            "gus": [], "newhighs": [], "anoms": []})
+            "gus": [], "newhighs": [], "anoms": [], "jr": []})
         s["acc"].merge(res["acc"])
+        s["jr"].extend(res["jr"])
         s["weekly"].update(res["weekly"])
         for k, v in res["age"].items():
             s["age"][k].extend(v)
@@ -115,6 +121,7 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
     sido_meta = []
     for code, s in sidos.items():
         kpi = s["acc"].stats(asof_ym)
+        kpi["jr"] = metrics.jr_med(s["jr"])
         kpi["nh30"] = len(s["newhighs"])
         kpi["nh7"] = sum(1 for x in s["newhighs"] if x["date"] >= week_ago)
         doc = {
@@ -138,6 +145,10 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
         "updated": dt.datetime.now(KST).isoformat(timespec="minutes"), "asof": asof.isoformat(),
         "sample": sample, "site": sc, "sidos": sido_meta, "bands": bands,
         "partial": [metrics.ym_add(asof_ym, -1), asof_ym],
+        # 과거를 어디까지 채웠는지. months 가 target 보다 작으면 화면에 '채우는 중' 안내를 띄운다.
+        "coverage": {"from": first_date[:7],
+                     "months": (int(asof_ym[:4]) - int(first_date[:4])) * 12 + int(asof_ym[5:7]) - int(first_date[5:7]) + 1,
+                     "target": int(cfg.get("backfill_years", 10)) * 12},
         "features": {"macro": bool(macro), "kapt": kapt_hit > 0,
                      "geo": any(r[17] is not None for r in index_rows)},
         "counts": {"trade": stats["trade"], "rent": stats["rent"], "complexes": stats["complexes"]},

@@ -193,9 +193,14 @@ def type_stats(a: int, trs: list[dict], rts: list[dict], asof: dt.date, cfg: dic
     trough = min(after) if after else None
     y_from = (asof - day * (365 + int(cfg.get("recent_days", 183)))).isoformat()
     prev_year = med([t["price"] for t in base if y_from <= t["date"] < year_ago])
-    js = [r["deposit"] for r in rts if not r["monthly"] and r["date"] >= recent_from]
-    if not js:
-        js = [r["deposit"] for r in rts if not r["monthly"] and r["date"] >= year_ago]
+    # 전세 시세: 갱신 계약은 인상 한도 때문에 시세보다 낮게 찍히므로, 신규 계약이 있으면 신규만 본다.
+    jall = [r for r in rts if not r["monthly"]]
+    js = []
+    for since in (recent_from, year_ago):
+        win = [r for r in jall if r["date"] >= since]
+        js = [r["deposit"] for r in win if not r.get("renew")] or [r["deposit"] for r in win]
+        if js:
+            break
     jeonse = rint(med(js)) if js else None
     two_y = (asof - day * 730).isoformat()
     lf = int(cfg.get("low_floor_max", 3))
@@ -256,6 +261,9 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
         r_by[r["cid"]][int(r["area"])].append(r)
 
     index_rows, newhighs, anoms, apts = [], [], [], {}
+    # 지역 전세가율 = 같은 단지·같은 면적끼리 맞춘 전세가율들의 중위값(서로 다른 집을 섞어 나누지 않는다).
+    jr_all: list[float] = []
+    jr_dong: dict[str, list[float]] = defaultdict(list)
     for cid, types in t_by.items():
         c = complexes[cid]
         spec = specs.get(cid) or {}
@@ -264,6 +272,9 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
             st = type_stats(a, types[a], r_by.get(cid, {}).get(a, []), asof, cfg, bands)
             if st:
                 tstats.append(st)
+                if st["jr"] is not None and st["rn"]:      # 최근 6개월 안에 매매가 있는 면적만
+                    jr_all.append(st["jr"])
+                    jr_dong[c["umd"]].append(st["jr"])
         if not tstats:
             continue
         cnt3 = {a: sum(1 for t in types[a] if not t["cancel"] and t["date"] >= y3) for a in types}
@@ -307,7 +318,13 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
             "rents": [[r["date"], r["area"], r["floor"], r["deposit"], r["monthly"], r["renew"]] for r in all_r],
         }
     return {"acc": acc, "dong_acc": dict(dong_acc), "weekly": weekly, "age": dict(age),
-            "index_rows": index_rows, "newhighs": newhighs, "anoms": anoms, "apts": apts}
+            "index_rows": index_rows, "newhighs": newhighs, "anoms": anoms, "apts": apts,
+            "jr": jr_all, "jr_dong": dict(jr_dong)}
+
+
+def jr_med(xs: list[float], min_n: int = 3):
+    """맞춘 전세가율 목록의 중위값. 표본이 너무 적으면 None."""
+    return round(med(xs), 1) if len(xs) >= min_n else None
 
 
 def weekly_json(weekly: Counter, asof: dt.date, weeks: int = 26) -> dict:

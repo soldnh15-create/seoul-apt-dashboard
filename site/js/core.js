@@ -7,7 +7,11 @@ const nf = new Intl.NumberFormat('ko-KR');
 
 export const F = {
   n: v => v == null ? '-' : nf.format(v),
-  eok: v => { if (v == null) return '-'; const e = Math.floor(v / 10000), m = Math.round(v % 10000); return e ? `${e}억${m ? ' ' + nf.format(m) : ''}` : `${nf.format(m)}만`; },
+  eok: v => {
+    if (v == null) return '-';
+    const s = v < 0 ? '-' : '', a = Math.abs(v), e = Math.floor(a / 10000), m = Math.round(a % 10000);
+    return s + (e ? `${e}억${m ? ' ' + nf.format(m) : ''}` : `${nf.format(m)}만`);
+  },
   eokS: v => v == null ? '-' : Math.abs(v) >= 10000 ? `${+(v / 10000).toFixed(2)}억` : `${nf.format(v)}만`,
   pct: v => v == null ? '-' : `${v > 0 ? '+' : ''}${(+v).toFixed(1)}%`,
   pct0: v => v == null ? '-' : `${(+v).toFixed(1)}%`,
@@ -94,9 +98,13 @@ export async function share(title) {
 
 // ── 데이터 ────────────────────────────────────────────
 const cache = new Map();
+let dataVer = '';   // meta.json 의 갱신 시각. 다른 데이터 주소에 붙여서 갱신 뒤에 예전 숫자가 남지 않게 한다.
 export function get(path) {
   if (!cache.has(path)) {
-    cache.set(path, fetch(`data/${path}`).then(r => { if (!r.ok) throw new Error(`${path} (${r.status})`); return r.json(); })
+    const isMeta = path === 'meta.json';
+    const url = `data/${path}${!isMeta && dataVer ? `?v=${dataVer}` : ''}`;
+    cache.set(path, fetch(url, isMeta ? { cache: 'no-cache' } : undefined)
+      .then(r => { if (!r.ok) throw new Error(`${path} (${r.status})`); return r.json(); })
       .catch(e => { cache.delete(path); throw e; }));
   }
   return cache.get(path);
@@ -104,6 +112,7 @@ export function get(path) {
 export const D = { meta: null, index: null, byId: null, guName: {} };
 export async function loadMeta() {
   D.meta = await get('meta.json');
+  dataVer = encodeURIComponent(D.meta.updated || D.meta.asof || '');
   for (const s of D.meta.sidos) for (const g of s.gus) D.guName[g.sgg] = g.name;
   return D.meta;
 }

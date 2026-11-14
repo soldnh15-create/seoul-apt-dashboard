@@ -50,6 +50,28 @@ def test_quota_stops_gracefully_and_keeps_checkpoint(tmp_path):
     assert len(store.read_json(store.checkpoint_path(tmp_path))) == 3
 
 
+def test_time_budget_stops_and_resumes_next_run(tmp_path, monkeypatch):
+    """실행 시간 상한을 넘으면 받은 데까지 저장하고 멈춘다(자동 실행 제한 시간에 걸려 통째로 날리지 않게)."""
+    monkeypatch.setitem(config.settings(), "collect_minutes_budget", 1)
+    monkeypatch.setitem(config.settings(), "request_interval_sec", 0)
+    clock = iter([0, 0] + [10 ** 6] * 50)            # 시작 → 첫 달은 통과 → 그다음부터 시간 초과
+    monkeypatch.setattr(collect.time, "monotonic", lambda: next(clock))
+    s = collect.run("daily", sggs=["11680"], kinds=("trade",), base=tmp_path, transport=mock_api.transport,
+                    months=["202401", "202402", "202403"], log=lambda *_: None)
+    assert s["done"] == 1 and "실행 시간" in s["stopped"]
+    assert len(store.read_json(store.checkpoint_path(tmp_path))) == 1
+
+
+def test_gives_up_early_when_api_unreachable(tmp_path, monkeypatch):
+    monkeypatch.setitem(config.settings(), "retry_max", 0)
+
+    def dead(url, timeout=30):
+        raise api.TransientError("네트워크 오류: TimeoutError")
+    s = collect.run("daily", sggs=["11680"], kinds=("trade",), base=tmp_path, transport=dead,
+                    months=["202401", "202402", "202403", "202404", "202405"], log=lambda *_: None)
+    assert s["done"] == 0 and len(s["failed"]) == 3 and "연결" in s["stopped"]
+
+
 def test_missing_key_raises_auth_error(tmp_path, monkeypatch):
     monkeypatch.delenv(api.KEY_ENV, raising=False)
     with pytest.raises(api.AuthError):
@@ -135,6 +157,43 @@ def test_type_stats_new_high_drawdown_jeonse_anomaly():
     assert st["ppy"] == round(102000 / 84.97 * 3.3058)
 
 
+def test_jeonse_uses_new_contracts_over_renewals():
+    asof = dt.date(2024, 12, 31)
+    trs = [_t("2024-09-10", 100000), _t("2024-10-10", 100000)]
+    rts = [_r("2024-10-01", 50000) | {"renew": 1}, _r("2024-10-05", 52000) | {"renew": 1},
+           _r("2024-11-01", 60000)]                         # 신규 1건이 갱신 2건보다 우선
+    st = metrics.type_stats(84, trs, rts, asof, CFG, BANDS)
+    assert st["jeonse"] == 60000 and st["jr"] == 60.0
+    only_renew = metrics.type_stats(84, [dict(t) for t in trs], rts[:2], asof, CFG, BANDS)
+    assert only_renew["jeonse"] == 51000                    # 신규가 없으면 갱신이라도 쓴다
+
+
+def test_region_jeonse_ratio_is_median_of_matched_pairs():
+    """구 전세가율은 '전세 평단가 ÷ 매매 평단가'가 아니라 단지·면적별 전세가율의 중위값."""
+    asof = dt.date(2024, 12, 31)
+    trades, rents = [], []
+    for i, (price, dep) in enumerate([(100000, 60000), (200000, 80000), (50000, 40000)]):   # 60% · 40% · 80%
+        seq = f"11680-{i + 1}"
+        trades += [_t("2024-10-10", price, apt=f"단지{i}", seq=seq) | {"jibun": str(i)},
+                   _t("2024-11-10", price, apt=f"단지{i}", seq=seq) | {"jibun": str(i)}]
+        rents += [_r("2024-11-01", dep, apt=f"단지{i}", jibun=str(i))]
+    rents += [_r("2024-11-02", 5000, apt="매매없는원룸", jibun="777", area=20.0)] * 30   # 매매 없는 전세는 영향 없음
+    cxs, _ = complexes.assign(trades, rents)
+    res = metrics.process_gu(GU[0], trades, rents, cxs, {}, CFG, asof)
+    assert sorted(res["jr"]) == [40.0, 60.0, 80.0] and metrics.jr_med(res["jr"]) == 60.0
+    assert metrics.jr_med([55.0, 60.0]) is None             # 표본 3개 미만이면 표시 안 함
+
+
+def test_report_skips_comparison_when_history_is_missing():
+    base = {"region": "서울", "ppy": 4560, "yoy": None, "vol_last": None, "up": [], "down": [], "jr": None,
+            "nh30": 0, "nh7": 0, "newhighs": [], "cancel": None}
+    first = report.render(base | {"chg3m": None})[0]
+    assert first.endswith("4,560만원입니다.") and "변동" not in first
+    assert "2.1% 올랐습니다" in report.render(base | {"chg3m": 2.1})[0]
+    assert "1.5% 내렸습니다" in report.render(base | {"chg3m": -1.5})[0]
+    assert "변동이 없었습니다" in report.render(base | {"chg3m": 0})[0]
+
+
 def test_series_stats_windows():
     acc = metrics.SeriesAcc(["small", "std", "large"])
     for m, price in (("2024-04", 80000), ("2024-05", 80000), ("2024-06", 80000),
@@ -172,6 +231,7 @@ def test_build_writes_split_site_data(built):
     meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
     index = json.loads((out / "index.json").read_text(encoding="utf-8"))
     assert meta["sample"] is True and meta["site"]["brand"] and meta["sidos"][0]["code"] == "11"
+    assert meta["coverage"]["months"] == 30 and meta["coverage"]["target"] == CFG["backfill_years"] * 12
     assert index["cols"] == metrics.INDEX_COLS and len(index["rows"]) == stats["complexes"] > 10
     row = dict(zip(index["cols"], index["rows"][0]))
     apt = json.loads((out / "apt" / row["sgg"] / f"{row['id']}.json").read_text(encoding="utf-8"))
