@@ -5,6 +5,7 @@ backfill_years: 10          # 처음 채울 기간(년)
 refetch_months: 3           # 매일 다시 받는 최근 개월 수(신고기한 30일·정정·해제 반영)
 num_of_rows: 1000           # 한 번에 받는 행 수(공식 최대 1000)
 daily_call_budget: 9000     # API 1종당 하루 호출 상한(개발계정 10,000/일보다 낮게)
+collect_minutes_budget: 60  # 한 번 실행에 수집에 쓸 시간 상한(분). 넘으면 저장하고 멈춘 뒤 다음 실행에서 이어받는다(0 = 제한 없음)
 request_interval_sec: 0.12  # 호출 사이 쉬는 시간(초당 호출 제한 대비)
 retry_max: 4                # 일시 오류 재시도 횟수
 retry_base_sec: 1.5         # 재시도 대기(1.5 → 3 → 6 → 12초)

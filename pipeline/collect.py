@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import time
 from pathlib import Path
 
 from . import api, config, store
@@ -64,6 +65,9 @@ def run(mode: str = "daily", sample: bool = False, max_calls: int | None = None,
         kw["sleep"] = sleep
     clients = {k: api.Client(key or "TEST", cfg, **kw) for k in kinds}
     budget = int(max_calls if max_calls is not None else cfg.get("daily_call_budget", 9000))
+    # 한 번 실행에 쓸 시간 상한(분). 넘으면 받은 데까지 저장하고 멈춘다 — 자동 실행 제한 시간에 걸려 통째로 날리지 않게.
+    minutes = float(cfg.get("collect_minutes_budget", 0) or 0)
+    deadline = time.monotonic() + minutes * 60 if minutes > 0 and not sample else None
 
     ck_path = store.checkpoint_path(base)
     ckpt = store.read_json(ck_path)
@@ -75,6 +79,9 @@ def run(mode: str = "daily", sample: bool = False, max_calls: int | None = None,
     for kind, sgg, ym in tasks:
         if kind in stopped_kinds:
             continue
+        if deadline is not None and time.monotonic() > deadline:
+            summary["stopped"] = f"실행 시간 {minutes:g}분 도달 — 다음 실행에서 이어받습니다"
+            break
         cl = clients[kind]
         if cl.calls >= budget:
             stopped_kinds.add(kind)
@@ -91,6 +98,10 @@ def run(mode: str = "daily", sample: bool = False, max_calls: int | None = None,
             raise
         except api.ApiError as e:
             summary["failed"].append(f"{kind}:{sgg}:{ym} {e}")
+            log(f"  실패 {kind}:{sgg}:{ym} — {e}")
+            if summary["done"] == 0 and len(summary["failed"]) >= 3:
+                summary["stopped"] = "처음부터 연속 실패 — API에 연결되지 않아 중단"
+                break
             if len(summary["failed"]) >= 20:
                 summary["stopped"] = "오류가 20건 넘어 중단"
                 break
@@ -105,9 +116,9 @@ def run(mode: str = "daily", sample: bool = False, max_calls: int | None = None,
         ckpt[f"{kind}:{sgg}:{ym}"] = today.isoformat()
         summary["done"] += 1
         summary["rows"] += len(rows)
-        if summary["done"] % 200 == 0:
+        if summary["done"] % 50 == 0:
             store.write_json(ck_path, ckpt)
-            log(f"  … {summary['done']}/{len(tasks)} 완료")
+            log(f"  … {summary['done']}/{len(tasks)} 완료 (행 {summary['rows']:,}, 실패 {len(summary['failed'])})")
     store.write_json(ck_path, ckpt)
     summary["calls"] = {k: c.calls for k, c in clients.items()}
     summary["left"] = len(plan(mode, today, cfg, sggs, ckpt, kinds, months)) if mode == "backfill" and not months else 0
