@@ -88,6 +88,9 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
         gstats["apts"] = len(res["apts"])
         gstats["jr"] = metrics.jr_med(res["jr"])
         metrics.apply_matched_chg(gstats, res["chg"])
+        gstats["nh30"] = len(res["newhighs"])                      # 최근 30일 신고가 건수(서열과 확산 화면)
+        gidx = metrics.flow_index(res["qlinks"], asof_ym)         # 같은 집끼리 비교한 흐름 지수
+        metrics.apply_index_dd(gstats, gidx)
         dongs = []
         for umd, dacc in sorted(res["dong_acc"].items()):
             ds = dacc.stats(asof_ym)
@@ -96,7 +99,7 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
             dongs.append({"umd": umd, **{k: ds[k] for k in ("ppy", "chg3m", "yoy", "vol3m", "volchg", "jr")}})
         store.write_json(out / "gu" / f"{reg['sgg']}.json", {
             "sgg": reg["sgg"], "name": reg["name"], "sido": reg["sido"], "asof": asof.isoformat(),
-            "stats": gstats, "series": res["acc"].to_json(),
+            "stats": gstats, "series": res["acc"].to_json(), "idx": gidx,
             "weekly": metrics.weekly_json(res["weekly"], asof),
             "dongs": dongs,
             "dong_series": {umd: {k: v for k, v in dacc.to_json(last=60, bands=False).items()
@@ -108,9 +111,13 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
         s = sidos.setdefault(reg["sido"], {
             "code": reg["sido"], "name": reg["sido_name"], "short": reg["sido_short"],
             "acc": metrics.SeriesAcc(bk), "weekly": Counter(), "age": defaultdict(list),
-            "gus": [], "newhighs": [], "anoms": [], "jr": [], "chg": {"c3": [], "cy": []}})
+            "gus": [], "newhighs": [], "anoms": [], "jr": [], "chg": {"c3": [], "cy": []},
+            "qlinks": defaultdict(list), "gu_idx": {}})
         s["acc"].merge(res["acc"])
         s["jr"].extend(res["jr"])
+        s["gu_idx"][reg["sgg"]] = gidx
+        for k, v in res["qlinks"].items():
+            s["qlinks"][k].extend(v)
         for k in ("c3", "cy"):
             s["chg"][k].extend(res["chg"][k])
         s["weekly"].update(res["weekly"])
@@ -127,11 +134,15 @@ def build(sample: bool | None = None, out: Path | None = None, today: dt.date | 
         kpi = s["acc"].stats(asof_ym)
         kpi["jr"] = metrics.jr_med(s["jr"])
         metrics.apply_matched_chg(kpi, s["chg"])
+        sidx = metrics.flow_index(s["qlinks"], asof_ym)
+        metrics.apply_index_dd(kpi, sidx)
         kpi["nh30"] = len(s["newhighs"])
         kpi["nh7"] = sum(1 for x in s["newhighs"] if x["date"] >= week_ago)
         doc = {
             "code": code, "name": s["name"], "short": s["short"], "asof": asof.isoformat(), "kpi": kpi,
             "series": s["acc"].to_json(), "weekly": metrics.weekly_json(s["weekly"], asof),
+            # 흐름 지수: 시도 전체와 구별(구끼리 겹쳐 보기)
+            "idx": sidx, "gu_idx": s["gu_idx"],
             "gus": s["gus"], "newhighs": _top(s["newhighs"], 300), "anoms": _top(s["anoms"], 200),
             "age": metrics.age_json(s["age"], cfg.get("age_bands", [5, 10, 20, 30])),
         }

@@ -57,7 +57,7 @@ export async function render(el, r) {
       ${kpiCard('전세가율', F.pct0(k.jr), '같은 단지·면적끼리 비교한 중간값')}
       ${kpiCard('최근 30일 신고가', `${F.n(k.nh30)}건`, `최근 7일 ${F.n(k.nh7)}건`)}
       ${kpiCard('1년 전 대비', F.pct(k.yoy), '같은 단지·면적끼리 비교한 중간값', cls(k.yoy))}
-      ${kpiCard('전고점 대비', F.pct(k.dd), '월 중위 평단가 기준', cls(k.dd))}
+      ${kpiCard('전고점 대비', F.pct(k.dd), '같은 집끼리 비교한 흐름 기준(3개월 단위)', cls(k.dd))}
       ${kpiCard('해제 거래 비율', F.pct0(k.cancel), '최근 3개월')}
       ${kpiCard('직거래 비율', F.pct0(k.direct), '최근 3개월')}
     </div>
@@ -67,7 +67,7 @@ export async function render(el, r) {
       <div class="row" id="ctl" style="margin-bottom:8px">${controls(meta.bands, band, months)}</div>
       <div class="chart" id="c-main"></div>
     </div>
-    <div class="card"><div class="head"><h2>구별 순위</h2><span class="muted small">제목을 누르면 정렬돼요</span></div><div id="t-gu"></div></div>
+    <div class="card"><div class="head"><h2>구별 순위</h2><span class="muted small">제목을 누르면 정렬돼요 · <a href="#/flow">서열과 확산으로 보기 →</a></span></div><div id="t-gu"></div></div>
     <div class="card"><div class="head"><h2>단지 순위</h2>
       <div class="chips" id="rk-ctl"><button class="chip on" data-k="n12" data-d="-1">거래 많은 순</button><button class="chip" data-k="chg1y" data-d="-1">1년 많이 오른 순</button>
         <button class="chip" data-k="dd" data-d="1">고점 대비 많이 내린 순</button><button class="chip" data-k="jr" data-d="-1">전세가율 높은 순</button></div></div>

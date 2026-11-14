@@ -114,6 +114,20 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .guc a { text-decoration: none; }
 .guc .kpi .val { font-size: 1.05rem; }
 .note { font-size: .82rem; color: var(--muted); margin: 8px 0 0; }
+/* 서열과 확산: 서열 순 막대 */
+.flow-sum { margin: 0 0 10px; font-size: .95rem; }
+.flow-row { display: grid; grid-template-columns: 22px 64px 66px 1fr 62px; gap: 6px; align-items: center; padding: 5px 2px; border-bottom: 1px solid var(--line); text-decoration: none; font-size: .9rem; }
+.flow-row:hover { background: var(--chip); }
+.flow-row .rk { color: var(--muted); font-size: .78rem; text-align: right; }
+.flow-row .nm { font-weight: 600; white-space: nowrap; }
+.flow-row .pp { color: var(--muted); font-size: .8rem; text-align: right; white-space: nowrap; }
+.flow-row .vl { text-align: right; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.flow-row .bar { position: relative; height: 14px; }
+.flow-row .bar .z { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--line); }
+.flow-row .bar .b { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: var(--muted); min-width: 1px; }
+.flow-row .bar .b.up { background: var(--up); } .flow-row .bar .b.down { background: var(--down); } .flow-row .bar .b.cnt { background: var(--accent); }
+.flow-how { margin: 0; padding-left: 20px; font-size: .92rem; } .flow-how li { margin-bottom: 6px; }
+@media (max-width: 480px) { .flow-row { grid-template-columns: 18px 56px 1fr 58px; } .flow-row .pp { display: none; } }
 .loading, .err { text-align: center; padding: 60px 0; color: var(--muted); }
 .promo { max-width: 1200px; margin: 8px auto 0; padding: 0 12px; }
 .promo-in { background: var(--brand); color: var(--brand-ink); border-radius: 14px; padding: 16px 18px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }

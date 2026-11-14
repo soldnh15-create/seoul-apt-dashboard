@@ -18,7 +18,7 @@ export const APT_COLS = [
 async function list(el) {
   const meta = D.meta;
   const docs = await Promise.all(meta.sidos.map(s => get(`sido/${s.code}.json`)));
-  el.innerHTML = `<h1>구별 보기</h1><p class="muted small">구를 누르면 추이·동별·단지 목록이 나와요.</p>` + docs.map(d => `
+  el.innerHTML = `<h1>구별 보기</h1><p class="muted small">구를 누르면 추이·동별·단지 목록이 나와요. 오름세가 서열 위에서 아래로 어디까지 번졌는지는 <a href="#/flow"><b>서열과 확산</b></a>에서 한눈에 볼 수 있어요.</p>` + docs.map(d => `
     <div class="card"><h2>${esc(d.name)}</h2><div class="guc">${[...d.gus].sort((a, b) => (b.ppy || 0) - (a.ppy || 0)).map(g => `
       <a href="#/gu/${g.sgg}"><div class="kpi"><div class="lab">${esc(g.name)}</div><div class="val">${F.man(g.ppy)}</div>
       <div class="sub"><span class="${cls(g.chg3m)}">${F.pct(g.chg3m)}</span> <span class="muted">· ${F.n(g.vol3m)}건</span></div></div></a>`).join('')}</div>

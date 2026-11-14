@@ -277,6 +277,12 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
     # 같은 집의 변동률을 모아 그 중위값을 쓴다. c3 = 직전 3개월 대비, cy = 1년 전 대비.
     chg_all: dict[str, list[float]] = {"c3": [], "cy": []}
     chg_dong: dict[str, dict[str, list[float]]] = defaultdict(lambda: {"c3": [], "cy": []})
+    # 흐름 지수의 재료: 기준 달에서 거꾸로 3개월씩 끊은 분기 k(0 = 최근 3개월)마다,
+    # 같은 집의 '최근 3개월 중위가 ÷ 분기 k 중위가'를 모은다(과거 각 분기를 지금과 직접 비교).
+    # 분기를 차례로 이어 붙이는 방식은 거래가 마른 하락기에 오차가 쌓여 5년 넘는 구간이 실제보다 높게 나왔다
+    # (2026-11 실측: 서울 5년 변동 직접 비교 +7.6% vs 이어 붙이기 +26.5%). 그래서 직접 비교를 쓴다.
+    qlinks: dict[int, list[float]] = defaultdict(list)
+    asof_i = asof.year * 12 + asof.month - 1
     for cid, types in t_by.items():
         c = complexes[cid]
         spec = specs.get(cid) or {}
@@ -290,6 +296,15 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
                         chg_all[k].append(v)
                         chg_dong[c["umd"]][k].append(v)
                 tstats.append(st)
+                qp: dict[int, list] = defaultdict(list)
+                for t in types[a]:
+                    if not t["cancel"] and "anom" not in t:
+                        qp[(asof_i - (int(t["date"][:4]) * 12 + int(t["date"][5:7]) - 1)) // 3].append(t["price"])
+                if 0 in qp:
+                    now = med(qp[0])
+                    for k, v in qp.items():
+                        if k > 0:
+                            qlinks[k].append(now / med(v))
                 if st["jr"] is not None and st["rn"]:      # 최근 6개월 안에 매매가 있는 면적만
                     jr_all.append(st["jr"])
                     jr_dong[c["umd"]].append(st["jr"])
@@ -337,7 +352,21 @@ def process_gu(reg: dict, trades: list[dict], rents: list[dict], complexes: dict
         }
     return {"acc": acc, "dong_acc": dict(dong_acc), "weekly": weekly, "age": dict(age),
             "index_rows": index_rows, "newhighs": newhighs, "anoms": anoms, "apts": apts,
-            "jr": jr_all, "jr_dong": dict(jr_dong), "chg": chg_all, "chg_dong": dict(chg_dong)}
+            "jr": jr_all, "jr_dong": dict(jr_dong), "chg": chg_all, "chg_dong": dict(chg_dong),
+            "qlinks": dict(qlinks)}
+
+
+def flow_index(links: dict[int, list[float]], asof_ym: str, min_n: int = 5) -> dict:
+    """같은 집끼리 비교한 흐름 지수(최근 3개월 = 100).
+
+    links[k] = 같은 집의 '최근 3개월 중위가 ÷ 분기 k 중위가' 목록(k = 1 이 직전 3개월, 4 가 1년 전).
+    분기 k 의 값 = 100 ÷ 그 비율들의 중위값. 표본이 min_n 보다 적은 분기는 비워 둔다(None).
+    m = 각 분기의 마지막 달(오래된 것부터).
+    """
+    ks = [k for k, v in links.items() if len(v) >= min_n]
+    top = max(ks) if ks else 0
+    v = [round(100 / med(links[k]), 1) if len(links.get(k, [])) >= min_n else None for k in range(top, 0, -1)]
+    return {"m": [ym_add(asof_ym, -3 * k) for k in range(top, -1, -1)], "v": v + [100.0]}
 
 
 def jr_med(xs: list[float], min_n: int = 3):
@@ -350,6 +379,17 @@ def apply_matched_chg(stats: dict, chg: dict | None, min_n: int = 5) -> dict:
     chg = chg or {}
     stats["chg3m"] = jr_med(chg.get("c3", []), min_n)
     stats["yoy"] = jr_med(chg.get("cy", []), min_n)
+    return stats
+
+
+def apply_index_dd(stats: dict, idx: dict) -> dict:
+    """지역의 '전고점 대비'를 흐름 지수(같은 집끼리 비교) 기준으로 바꾼다. 지수가 너무 짧으면 그대로 둔다.
+
+    월 중위 평단가의 최고 달과 견주면 그달에 비싼 집이 많이 팔렸는지에 따라 값이 출렁이기 때문.
+    """
+    v = [x for x in idx.get("v") or [] if x is not None]
+    if len(v) > 2:
+        stats["dd"] = pct(v[-1], max(v))
     return stats
 
 

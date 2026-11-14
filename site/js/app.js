@@ -5,6 +5,7 @@ const pages = {
   home: () => import('./pages/home.js'), gu: () => import('./pages/gu.js'), apt: () => import('./pages/apt.js'),
   map: () => import('./pages/map.js'), screener: () => import('./pages/screener.js'), score: () => import('./pages/score.js'),
   compare: () => import('./pages/compare.js'), my: () => import('./pages/my.js'), report: () => import('./pages/report.js'),
+  flow: () => import('./pages/flow.js'),
 };
 
 export function parseHash() {

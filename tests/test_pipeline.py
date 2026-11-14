@@ -249,6 +249,26 @@ def test_region_change_compares_same_homes_not_mixed_medians():
     assert metrics.apply_matched_chg({}, {"c3": [1.0] * 4, "cy": []})["chg3m"] is None   # 표본 5개 미만
 
 
+def test_flow_index_compares_each_past_quarter_with_now_for_same_homes():
+    """흐름 지수: 과거 각 분기를 지금과 같은 집끼리 직접 비교한다(최근 3개월 = 100)."""
+    asof = dt.date(2024, 12, 31)
+    trades = []
+    for i in range(6):       # 여섯 단지가 분기마다 10% 씩 오른다(2024-03 → 06 → 09 → 12)
+        kw = {"apt": f"단지{i}", "seq": f"11680-{i + 1}"}
+        for q, d in enumerate(("2024-02-10", "2024-05-10", "2024-08-10", "2024-11-10")):
+            trades.append(_t(d, round(50000 * (i + 1) * 1.1 ** q), **kw) | {"jibun": str(i)})
+    trades.sort(key=lambda t: t["date"])
+    cxs, _ = complexes.assign(trades, [])
+    res = metrics.process_gu(GU[0], trades, [], cxs, {}, CFG, asof)
+    idx = metrics.flow_index(res["qlinks"], "2024-12")
+    assert idx["m"] == ["2024-03", "2024-06", "2024-09", "2024-12"]
+    assert idx["v"] == [75.1, 82.6, 90.9, 100.0]             # 분기마다 10% 씩 오른 흐름(100 ÷ 1.1³ …)
+    assert metrics.apply_index_dd({"dd": -30.0}, {"v": [90.0, 120.0, None, 100.0]})["dd"] == -16.7   # 가장 높았던 때(120) 대비
+    assert metrics.flow_index({1: [1.1] * 4}, "2024-12") == {"m": ["2024-12"], "v": [100.0]}        # 표본 부족이면 싣지 않음
+    gap = metrics.flow_index({1: [1.1] * 5, 2: [1.2] * 2, 3: [1.25] * 5}, "2024-12")
+    assert gap["v"] == [80.0, None, 90.9, 100.0]             # 표본이 부족한 분기만 비워 둔다
+
+
 def test_report_skips_comparison_when_history_is_missing():
     base = {"region": "서울", "ppy": 4560, "yoy": None, "vol_last": None, "up": [], "down": [], "jr": None,
             "nh30": 0, "nh7": 0, "newhighs": [], "cancel": None}
