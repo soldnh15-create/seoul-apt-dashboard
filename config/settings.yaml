@@ -51,6 +51,9 @@ rone:                       # 한국부동산원 R-ONE — 통계표 ID는 실�
   url: https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do
   weekly_sale_index: {statbl_id: "", cycle: "WK", itm_id: "", cls_id: ""}
   weekly_jeonse_index: {statbl_id: "", cycle: "WK", itm_id: "", cls_id: ""}
-gemini:                     # 위에서부터 차례로 시도(모델 이름이 바뀌어 없어지면 다음 후보로). 실제 키로 확인 전(미확인)
-  models: [gemini-2.5-flash, gemini-flash-latest, gemini-2.0-flash]
-extras_minutes_budget: 30   # 선택 기능(단지 정보·좌표) 하나가 한 번 실행에 쓸 시간 상한(분). 남은 것은 다음 실행에서 이어받는다
+gemini:                     # 위에서부터 차례로 시도(모델 이름이 바뀌어 없어지면 다음 후보로).
+                            # 2026-11-14 실제 키로 확인: gemini-2.5-flash·2.0-flash 는 없어짐(404), gemini-flash-latest 는 60초 안에 답이 안 옴.
+                            # 이름은 공식 모델 목록(ai.google.dev/gemini-api/docs/models)에서 확인. 무료 한도 여부는 미확인.
+  models: [gemini-3.5-flash-lite, gemini-flash-latest, gemini-3.8-flash]
+extras_minutes_budget: 40   # 선택 기능(단지 정보·좌표) 하나가 한 번 실행에 쓸 시간 상한(분). 남은 것은 다음 실행에서 이어받는다
+extras_workers: 4           # 선택 기능을 몇 줄로 나눠 받을지(실측: 한 줄로는 30분에 단지 정보 580곳·좌표 1,240곳)

@@ -12,6 +12,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import api, complexes as cx, config, report, store
@@ -80,15 +81,19 @@ def kapt_update(sample: bool = False, transport=None, log=print, base: Path | No
     inf = api.Client(key or "TEST", cfg, parser=api.parse_json_page, key_name="ServiceKey", **kw)
     budget = int(cfg.get("kapt_call_budget", 4500))
     deadline = _deadline(cfg) if transport is None else None
+    workers = max(1, int(cfg.get("extras_workers", 4))) if transport is None else 1
     kdir = Path(base) / "kapt"
     info = store.read_json(kdir / "info.json")
     specs = store.read_json(kdir / "specs.json")
     ov = config.overrides()
+    pairs: list[tuple[str, str]] = []          # (단지 ID, K-apt 단지코드)
     new = left = 0
+    stop: list[str] = []                       # 중단 이유(있으면 더 부르지 않는다)
     try:
+        # 1) 구별 단지 목록(받아 둔 것이 없을 때만 새로 받는다)과 우리 단지 맞추기
         for reg in regs or config.regions():
             lp = kdir / "list" / f"{reg['sgg']}.json"
-            items = store.read_json(lp) if lp.exists() else None    # 받아 둔 목록이 없을 때만 새로 받는다
+            items = store.read_json(lp) if lp.exists() else None
             if items is None and lst.calls < budget:
                 items = lst.fetch_all(cfg["endpoints"]["kapt_list"], {"sigunguCode": reg["sgg"]})
                 if items:                                           # 빈 목록은 저장하지 않는다(다음에 다시 받게)
@@ -97,26 +102,46 @@ def kapt_update(sample: bool = False, transport=None, log=print, base: Path | No
             if not items:
                 continue
             cxs, _ = cx.assign(store.load(base, "trade", reg["sgg"]), [], ov)
-            for cid, code in cx.match_kapt(cxs, items, ov).items():
-                if code not in info:
-                    if inf.calls >= budget - 2 or (deadline is not None and time.monotonic() > deadline):
-                        left += 1
-                        continue
-                    b, _n = inf.get_page(cfg["endpoints"]["kapt_basic"], {"kaptCode": code})
-                    d, _n = inf.get_page(cfg["endpoints"]["kapt_detail"], {"kaptCode": code})
-                    info[code] = {"basic": b[0] if b else {}, "detail": d[0] if d else {}}
-                    new += 1
-                    if new % 200 == 0:
-                        log(f"[K-apt]  … 새로 {new:,}개 받음")
-                specs[cid] = {"kapt": code, **kapt_spec(info[code]["basic"], info[code]["detail"])}
+            pairs.extend(cx.match_kapt(cxs, items, ov).items())
+
+        # 2) 아직 없는 단지의 기본·상세 정보를 여러 줄로 나눠 받는다(한 건에 1.5초쯤 걸려 한 줄로는 며칠이 걸린다)
+        def fetch(code: str):
+            if stop or inf.calls >= budget - 2 or (deadline is not None and time.monotonic() > deadline):
+                return code, None
+            try:
+                b, _n = inf.get_page(cfg["endpoints"]["kapt_basic"], {"kaptCode": code})
+                d, _n = inf.get_page(cfg["endpoints"]["kapt_detail"], {"kaptCode": code})
+            except api.QuotaExceeded as e:
+                stop.append(f"{e} — 다음 실행에서 이어받음")
+                return code, None
+            except api.ApiError as e:
+                stop.append(f"중단 — {e} (다음 실행에서 다시 시도)")
+                return code, None
+            return code, {"basic": b[0] if b else {}, "detail": d[0] if d else {}}
+
+        todo = list(dict.fromkeys(code for _cid, code in pairs if code not in info))
+        with ThreadPoolExecutor(workers) as pool:
+            for code, got in pool.map(fetch, todo):
+                if got is None:
+                    left += 1
+                    continue
+                info[code] = got
+                new += 1
+                if new % 200 == 0:
+                    log(f"[K-apt]  … 새로 {new:,}개 받음")
     except api.QuotaExceeded as e:
-        log(f"[K-apt] {e} — 다음 실행에서 이어받음")
+        stop.append(f"{e} — 다음 실행에서 이어받음")
     except api.ApiError as e:
         # 선택 기능이 실패해도 매일 갱신은 계속돼야 한다. 이유만 남기고 다음 실행에서 다시 시도한다.
-        log(f"[K-apt] 중단 — {e} (다음 실행에서 다시 시도)")
+        stop.append(f"중단 — {e} (다음 실행에서 다시 시도)")
     finally:
+        for cid, code in pairs:
+            if code in info:
+                specs[cid] = {"kapt": code, **kapt_spec(info[code]["basic"], info[code]["detail"])}
         store.write_json(kdir / "info.json", info)
         store.write_json(kdir / "specs.json", specs)
+    if stop:
+        log(f"[K-apt] {stop[0]}")
     log(f"[K-apt] 스펙 보유 단지 {len(specs):,} (새로 {new:,} · 남음 {left:,} · 호출 {lst.calls + inf.calls})")
     return len(specs)
 
@@ -125,7 +150,7 @@ def kapt_update(sample: bool = False, transport=None, log=print, base: Path | No
 KAKAO = "https://dapi.kakao.com/v2/local/search"
 
 
-def geo_update(sample: bool = False, limit: int = 3000, log=print) -> int:
+def geo_update(sample: bool = False, limit: int = 12000, log=print) -> int:
     key = _env("KAKAO_REST_KEY")
     if sample or not key:
         log("[좌표] 카카오 키 없음 — 건너뜀")
@@ -133,43 +158,59 @@ def geo_update(sample: bool = False, limit: int = 3000, log=print) -> int:
     base = config.data_base(False)
     geo = store.read_json(Path(base) / "geo" / "geo.json")
     h = {"Authorization": f"KakaoAK {key}"}
-    done = fails = left = 0
-    deadline = _deadline(config.settings())
-    stop = ""
+    cfg = config.settings()
+    deadline = _deadline(cfg)
+    workers = max(1, int(cfg.get("extras_workers", 4)))
+    todo = []                                   # (단지 ID, 주소 검색어)
     for reg in config.regions():
-        if stop:
-            break
         cxs, _ = cx.assign(store.load(base, "trade", reg["sgg"]), [], config.overrides())
-        for cid, c in cxs.items():
-            if cid in geo:
+        todo += [(cid, f"{reg['sido_name']} {reg['name']} {c['umd']} {c['jibun']}") for cid, c in cxs.items() if cid not in geo]
+    left = max(0, len(todo) - limit)
+    todo = todo[:limit]
+
+    def one(item):
+        """(단지 ID, 결과). 결과: 좌표 사전 / {}(주소를 못 찾음) / None(호출 실패·시간 초과 — 다음에 다시)."""
+        cid, addr = item
+        if deadline is not None and time.monotonic() > deadline:
+            return cid, None, "시간"
+        doc = _json_call(f"{KAKAO}/address.json?query={urllib.parse.quote(addr)}", h)
+        if doc is None:
+            return cid, None, LAST_ERR or "실패"
+        docs = doc.get("documents") or []
+        if not docs:
+            return cid, {}, ""
+        x, y = docs[0]["x"], docs[0]["y"]
+        ent = {"lat": round(float(y), 6), "lng": round(float(x), 6)}
+        for code, name, need in (("SW8", "subway", ""), ("SC4", "school", "초등학교")):
+            near = _json_call(f"{KAKAO}/category.json?category_group_code={code}&x={x}&y={y}"
+                              "&radius=2000&sort=distance", h) or {}
+            hit = next((d for d in near.get("documents", []) if need in d.get("place_name", "")), None)
+            if hit:
+                ent[name] = {"name": hit["place_name"], "dist": int(hit.get("distance") or 0)}
+        return cid, ent, ""
+
+    done = fails = 0
+    stop = ""
+    # 처음 몇 건은 한 줄로 두드려 본다. 처음부터 계속 실패하면 키·사용 설정 문제이므로 더 부르지 않는다.
+    probe, rest = todo[:5], todo[5:]
+    results = [one(it) for it in probe]
+    if probe and all(r[1] is None for r in results):
+        stop = f"카카오 호출이 계속 실패({results[0][2]}) — 키와 '카카오맵' 사용 설정을 확인"
+        left += len(rest)
+        rest = []
+    with ThreadPoolExecutor(workers) as pool:
+        for cid, ent, why in list(results) + list(pool.map(one, rest)):
+            if ent is None:
+                if why == "시간":
+                    left += 1
+                else:
+                    fails += 1
                 continue
-            if done >= limit or (deadline is not None and time.monotonic() > deadline):
-                left += 1
-                continue
-            q = urllib.parse.quote(f"{reg['sido_name']} {reg['name']} {c['umd']} {c['jibun']}")
-            doc = _json_call(f"{KAKAO}/address.json?query={q}", h)
-            if doc is None:
-                fails += 1
-                if fails >= 5 and done == 0:     # 처음부터 계속 실패 = 키·사용 설정 문제. 더 두드리지 않는다.
-                    stop = f"카카오 호출이 계속 실패({LAST_ERR}) — 키와 '카카오맵' 사용 설정을 확인"
-                    break
-                continue
-            docs = doc.get("documents") or []
-            if not docs:
-                geo[cid] = {}
-                continue
-            x, y = docs[0]["x"], docs[0]["y"]
-            ent = {"lat": round(float(y), 6), "lng": round(float(x), 6)}
-            for code, name, need in (("SW8", "subway", ""), ("SC4", "school", "초등학교")):
-                near = _json_call(f"{KAKAO}/category.json?category_group_code={code}&x={x}&y={y}"
-                                  "&radius=2000&sort=distance", h) or {}
-                hit = next((d for d in near.get("documents", []) if need in d.get("place_name", "")), None)
-                if hit:
-                    ent[name] = {"name": hit["place_name"], "dist": int(hit.get("distance") or 0)}
             geo[cid] = ent
-            done += 1
-            if done % 500 == 0:
-                log(f"[좌표]  … 새로 {done:,}개")
+            if ent:
+                done += 1
+                if done % 500 == 0:
+                    log(f"[좌표]  … 새로 {done:,}개")
     store.write_json(Path(base) / "geo" / "geo.json", geo)
     if stop:
         log(f"[좌표] 중단 — {stop}")
@@ -245,7 +286,7 @@ def ai_report(sample: bool = False, force: bool = False, log=print) -> int:
         for model in models:           # 모델 이름이 바뀌어 없어졌으면 다음 후보로
             for _ in range(2):
                 doc = _json_call(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                                 {"x-goog-api-key": key}, {"contents": [{"parts": [{"text": prompt}]}]}, 60)
+                                 {"x-goog-api-key": key}, {"contents": [{"parts": [{"text": prompt}]}]}, 150)
                 if doc is None:
                     log(f"[AI 글] {model} 호출 실패({LAST_ERR})")
                     break
