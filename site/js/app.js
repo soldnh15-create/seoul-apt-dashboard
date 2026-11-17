@@ -45,7 +45,19 @@ function applyBrand(meta) {
     $('#promo-title').textContent = s.promo_title;
     $('#promo-text').textContent = s.promo_text || '';
     const a = $('#cta3'); a.href = s.home_url; a.textContent = s.home_label || '자세히 보기';
+    // 미리보기 버튼: 주소(preview_url)가 있을 때만. 있으면 미리보기가 앞(채운 버튼), 강의 보기는 테두리 버튼으로.
+    if (s.preview_url) {
+      const p = $('#cta4'); p.href = s.preview_url; p.textContent = s.preview_label || '▶ 1강 첫 챕터 무료 미리보기'; p.hidden = false;
+      a.classList.add('line');
+    }
     $('#promo').hidden = false;
+  }
+  // 방문 집계(Cloudflare Web Analytics, 쿠키 없음): 토큰(cf_beacon_token)이 있을 때만 붙인다. 내 PC에서 볼 때(localhost)는 세지 않는다.
+  if (s.cf_beacon_token && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) && !document.querySelector('script[data-cf-beacon]')) {
+    const b = document.createElement('script');
+    b.defer = true; b.src = 'https://static.cloudflareinsights.com/beacon.min.js';
+    b.setAttribute('data-cf-beacon', JSON.stringify({ token: String(s.cf_beacon_token) }));
+    document.head.appendChild(b);
   }
   if (s.disclaimer) $('#disclaimer').textContent = s.disclaimer;
   if (s.source) $('#source').textContent = s.source;

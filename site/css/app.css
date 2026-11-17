@@ -135,6 +135,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .promo-in b { font-size: 1.02rem; }
 .promo-in p { margin: 4px 0 0; font-size: .88rem; opacity: .85; }
 .promo-in .cta { margin-left: 0; }
+.promo-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.promo-in .cta.line { background: transparent; color: inherit; box-shadow: inset 0 0 0 1.5px currentColor; }
 .foot { max-width: 1200px; margin: 0 auto; padding: 18px 12px 40px; font-size: .82rem; border-top: 1px solid var(--line); }
 .foot p { margin: 4px 0; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #212936; color: #fff; padding: 10px 16px; border-radius: 999px; font-size: .9rem; z-index: 99; box-shadow: 0 6px 20px rgba(0, 0, 0, .3); }
