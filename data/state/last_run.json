@@ -1,17 +1,17 @@
 {
  "calls": {
-  "rent": 91,
-  "trade": 78
+  "rent": 89,
+  "trade": 77
  },
  "done": 150,
  "failed": [],
- "finished": "2026-11-18T05:28:14",
+ "finished": "2026-11-19T05:24:43",
  "left": 150,
  "mode": "backfill",
  "planned": 150,
- "rows": 46951,
+ "rows": 47849,
  "sample": false,
  "skipped_suspicious": [],
- "started": "2026-11-18T05:21:00",
+ "started": "2026-11-19T05:19:27",
  "stopped": ""
 }
