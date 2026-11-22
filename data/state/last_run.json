@@ -5,13 +5,13 @@
  },
  "done": 150,
  "failed": [],
- "finished": "2026-11-22T05:11:12",
+ "finished": "2026-11-23T05:15:19",
  "left": 150,
  "mode": "backfill",
  "planned": 150,
- "rows": 49596,
+ "rows": 49607,
  "sample": false,
  "skipped_suspicious": [],
- "started": "2026-11-22T05:04:41",
+ "started": "2026-11-23T05:08:27",
  "stopped": ""
 }
